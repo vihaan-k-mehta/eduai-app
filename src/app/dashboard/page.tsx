@@ -116,7 +116,7 @@ export default function Dashboard() {
       {/* Main Content */}
       <main className="flex-1 p-8 overflow-auto">
         {activeTab === "overview" && <OverviewTab assignmentCount={assignments.length} lessonCount={savedLessonPlans.length} />}
-        {activeTab === "assignments" && <AssignmentsTab assignments={assignments} onAddAssignment={addAssignment} onRemoveAssignment={removeAssignment} />}
+        {activeTab === "assignments" && <AssignmentsTab assignments={assignments} onAddAssignment={addAssignment} onRemoveAssignment={removeAssignment} onAddToCalendar={addLessonToCalendar} onGoToCalendar={() => setActiveTab("calendar")} />}
         {activeTab === "grading" && <GradingTab assignments={assignments} />}
         {activeTab === "lessons" && <LessonsTab onAddToCalendar={addLessonToCalendar} onGoToCalendar={() => setActiveTab("calendar")} savedPlans={savedLessonPlans} onSavePlan={addLessonPlanToHistory} onRemovePlan={removeLessonPlan} />}
         {activeTab === "calendar" && <CalendarTab scheduledLessons={scheduledLessons} setScheduledLessons={setScheduledLessons} onRemoveLesson={removeLessonFromCalendar} />}
@@ -730,9 +730,11 @@ interface AssignmentsTabProps {
   assignments: Assignment[];
   onAddAssignment: (assignment: Omit<Assignment, "id" | "createdAt">) => void;
   onRemoveAssignment: (id: string) => void;
+  onAddToCalendar: (lesson: Omit<ScheduledLesson, "id">) => void;
+  onGoToCalendar: () => void;
 }
 
-function AssignmentsTab({ assignments, onAddAssignment, onRemoveAssignment }: AssignmentsTabProps) {
+function AssignmentsTab({ assignments, onAddAssignment, onRemoveAssignment, onAddToCalendar, onGoToCalendar }: AssignmentsTabProps) {
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
@@ -741,6 +743,31 @@ function AssignmentsTab({ assignments, onAddAssignment, onRemoveAssignment }: As
     { name: "", points: 10, description: "" }
   ]);
   const [viewingAssignment, setViewingAssignment] = useState<Assignment | null>(null);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [schedulingAssignment, setSchedulingAssignment] = useState<Assignment | null>(null);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("9:00 AM");
+  const [addedToCalendar, setAddedToCalendar] = useState<Set<string>>(new Set());
+
+  const handleAddToCalendar = (assignment: Assignment) => {
+    setSchedulingAssignment(assignment);
+    setScheduleDate(assignment.dueDate || new Date().toISOString().split("T")[0]);
+    setShowScheduleModal(true);
+  };
+
+  const confirmAddToCalendar = () => {
+    if (!schedulingAssignment) return;
+    onAddToCalendar({
+      title: `📝 ${schedulingAssignment.title}`,
+      subject: schedulingAssignment.subject,
+      date: scheduleDate,
+      time: scheduleTime,
+      duration: "Due",
+    });
+    setAddedToCalendar(prev => new Set([...prev, schedulingAssignment.id]));
+    setShowScheduleModal(false);
+    setSchedulingAssignment(null);
+  };
 
   const addCriterion = () => {
     setRubricCriteria([...rubricCriteria, { name: "", points: 10, description: "" }]);
@@ -785,6 +812,65 @@ function AssignmentsTab({ assignments, onAddAssignment, onRemoveAssignment }: As
       <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-6">Assignment Creator</h1>
 
       {/* View Assignment Modal */}
+      {/* Schedule Modal */}
+      {showScheduleModal && schedulingAssignment && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-md shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Add to Calendar</h2>
+              <button onClick={() => setShowScheduleModal(false)} className="text-slate-500 hover:text-slate-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Assignment</label>
+                <div className="p-3 bg-slate-100 dark:bg-slate-700 rounded-xl text-slate-900 dark:text-white font-medium">
+                  {schedulingAssignment.title}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Date</label>
+                <input
+                  type="date"
+                  value={scheduleDate}
+                  onChange={(e) => setScheduleDate(e.target.value)}
+                  className="w-full p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Time</label>
+                <select
+                  value={scheduleTime}
+                  onChange={(e) => setScheduleTime(e.target.value)}
+                  className="w-full p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-blue-500"
+                >
+                  {["8:00 AM", "9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "1:00 PM", "2:00 PM", "3:00 PM", "4:00 PM", "5:00 PM"].map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setShowScheduleModal(false)}
+                  className="flex-1 py-3 rounded-xl font-semibold border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmAddToCalendar}
+                  className="flex-1 bg-green-600 text-white py-3 rounded-xl font-semibold hover:bg-green-700 transition flex items-center justify-center gap-2"
+                >
+                  <Calendar className="h-5 w-5" />
+                  Add
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Assignment Modal */}
       {viewingAssignment && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-2xl shadow-xl max-h-[80vh] overflow-auto">
@@ -795,7 +881,7 @@ function AssignmentsTab({ assignments, onAddAssignment, onRemoveAssignment }: As
               </button>
             </div>
             <div className="space-y-4">
-              <div className="flex gap-4 text-sm">
+              <div className="flex flex-wrap gap-2 text-sm">
                 <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full">{viewingAssignment.subject}</span>
                 <span className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full">{viewingAssignment.totalPoints} pts</span>
                 {viewingAssignment.dueDate && (
@@ -821,6 +907,26 @@ function AssignmentsTab({ assignments, onAddAssignment, onRemoveAssignment }: As
                     </div>
                   ))}
                 </div>
+              </div>
+              {/* Add to Calendar button in modal */}
+              <div className="pt-2">
+                {addedToCalendar.has(viewingAssignment.id) ? (
+                  <button
+                    onClick={() => { setViewingAssignment(null); onGoToCalendar(); }}
+                    className="w-full py-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-xl font-semibold flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle2 className="h-5 w-5" />
+                    View in Calendar
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => { setViewingAssignment(null); handleAddToCalendar(viewingAssignment); }}
+                    className="w-full py-3 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 transition flex items-center justify-center gap-2"
+                  >
+                    <Calendar className="h-5 w-5" />
+                    Add to Calendar
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -972,15 +1078,34 @@ function AssignmentsTab({ assignments, onAddAssignment, onRemoveAssignment }: As
                       </div>
                     </div>
                     <div className="flex gap-1">
+                      {addedToCalendar.has(assignment.id) ? (
+                        <button
+                          onClick={onGoToCalendar}
+                          className="p-2 text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-lg transition"
+                          title="View in Calendar"
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleAddToCalendar(assignment)}
+                          className="p-2 text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-lg transition"
+                          title="Add to Calendar"
+                        >
+                          <Calendar className="h-4 w-4" />
+                        </button>
+                      )}
                       <button
                         onClick={() => setViewingAssignment(assignment)}
                         className="p-2 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition"
+                        title="View Details"
                       >
                         <Eye className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => onRemoveAssignment(assignment.id)}
                         className="p-2 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition"
+                        title="Delete"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
