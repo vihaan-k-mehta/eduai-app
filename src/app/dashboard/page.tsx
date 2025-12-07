@@ -290,6 +290,9 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
   const [isPostingGrade, setIsPostingGrade] = useState(false);
   const [postSuccess, setPostSuccess] = useState(false);
 
+  // Rubric grading state
+  const [rubricScores, setRubricScores] = useState<Record<string, { points: number; feedback: string }>>({});
+
   // Fetch Canvas courses
   const fetchCanvasCourses = async () => {
     setCanvasLoading(true);
@@ -332,6 +335,18 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
     setIsPostingGrade(true);
     setPostSuccess(false);
     try {
+      // Build rubric assessment from rubricScores if we have them
+      let rubricAssessment: Record<string, { points: number; comments?: string }> | undefined;
+      if (Object.keys(rubricScores).length > 0 && selectedCanvasAssignment.rubric) {
+        rubricAssessment = {};
+        for (const criterionId of Object.keys(rubricScores)) {
+          rubricAssessment[criterionId] = {
+            points: rubricScores[criterionId].points,
+            comments: rubricScores[criterionId].feedback || undefined,
+          };
+        }
+      }
+
       const res = await fetch("/api/canvas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -341,7 +356,8 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
           assignmentId: selectedCanvasAssignment.id,
           studentId: selectedCanvasSubmission.user_id,
           grade: gradeToPost,
-          comment: teacherComment, // Use teacher's custom comment instead of AI feedback
+          comment: teacherComment,
+          rubricAssessment, // Include rubric assessment for Canvas SpeedGrader
         }),
       });
       const data = await res.json();
@@ -365,6 +381,7 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
     setFeedback("");
     setAiDetection(null);
     setPostSuccess(false);
+    setRubricScores({}); // Clear rubric scores
 
     // Set rubric from Canvas assignment if available
     if (selectedCanvasAssignment) {
@@ -399,10 +416,23 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
     setFeedback("");
 
     try {
+      // Prepare rubric criteria for structured grading if Canvas rubric exists
+      const rubricCriteria = selectedCanvasAssignment?.rubric?.map(r => ({
+        id: r.id,
+        name: r.description,
+        pointsPossible: r.points,
+        ratings: r.ratings,
+      }));
+
       const response = await fetch("/api/grade", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentWork, rubric, assignmentType }),
+        body: JSON.stringify({
+          studentWork,
+          rubric,
+          assignmentType,
+          rubricCriteria
+        }),
       });
       const data = await response.json();
 
@@ -410,6 +440,23 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
         setFeedback(`Error: ${data.error}`);
       } else {
         setFeedback(data.feedback);
+
+        // If we got structured rubric grades, set them
+        if (data.rubricGrades?.criteriaScores) {
+          const scores: Record<string, { points: number; feedback: string }> = {};
+          data.rubricGrades.criteriaScores.forEach((c: { criterionId: string; pointsEarned: number; feedback: string }) => {
+            scores[c.criterionId] = {
+              points: c.pointsEarned,
+              feedback: c.feedback,
+            };
+          });
+          setRubricScores(scores);
+
+          // Auto-set grade to post from total score
+          if (data.rubricGrades.totalScore !== undefined) {
+            setGradeToPost(String(data.rubricGrades.totalScore));
+          }
+        }
       }
     } catch {
       setFeedback("Failed to grade assignment. Please try again.");
@@ -668,9 +715,82 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
                 <Upload className="h-5 w-5" /> Post Grade to Canvas
               </h3>
               <div className="space-y-4">
+                {/* Rubric Scoring Section */}
+                {selectedCanvasAssignment?.rubric && selectedCanvasAssignment.rubric.length > 0 && (
+                  <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+                    <h4 className="font-medium text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                      <ClipboardList className="h-4 w-4" /> Rubric Assessment
+                      {Object.keys(rubricScores).length > 0 && (
+                        <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-full">
+                          AI Scored
+                        </span>
+                      )}
+                    </h4>
+                    <div className="space-y-3">
+                      {selectedCanvasAssignment.rubric.map((criterion) => (
+                        <div key={criterion.id} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
+                          <div className="flex justify-between items-start mb-2">
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                              {criterion.description}
+                            </span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
+                              Max: {criterion.points} pts
+                            </span>
+                          </div>
+                          <div className="flex gap-2 items-center">
+                            <input
+                              type="number"
+                              min="0"
+                              max={criterion.points}
+                              step="0.5"
+                              value={rubricScores[criterion.id]?.points ?? ""}
+                              onChange={(e) => {
+                                const pts = parseFloat(e.target.value) || 0;
+                                setRubricScores(prev => ({
+                                  ...prev,
+                                  [criterion.id]: {
+                                    ...prev[criterion.id],
+                                    points: Math.min(pts, criterion.points),
+                                    feedback: prev[criterion.id]?.feedback || "",
+                                  }
+                                }));
+                                // Update total grade
+                                const total = selectedCanvasAssignment.rubric!.reduce((sum, c) => {
+                                  if (c.id === criterion.id) return sum + Math.min(pts, criterion.points);
+                                  return sum + (rubricScores[c.id]?.points || 0);
+                                }, 0);
+                                setGradeToPost(String(total));
+                              }}
+                              className="w-20 p-2 text-sm bg-white dark:bg-slate-600 rounded-lg border border-slate-300 dark:border-slate-500 focus:ring-2 focus:ring-blue-500"
+                              placeholder="0"
+                            />
+                            <span className="text-sm text-slate-500">pts</span>
+                            <input
+                              type="text"
+                              value={rubricScores[criterion.id]?.feedback ?? ""}
+                              onChange={(e) => {
+                                setRubricScores(prev => ({
+                                  ...prev,
+                                  [criterion.id]: {
+                                    ...prev[criterion.id],
+                                    points: prev[criterion.id]?.points || 0,
+                                    feedback: e.target.value,
+                                  }
+                                }));
+                              }}
+                              className="flex-1 p-2 text-sm bg-white dark:bg-slate-600 rounded-lg border border-slate-300 dark:border-slate-500 focus:ring-2 focus:ring-blue-500"
+                              placeholder="Feedback for this criterion..."
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Grade (out of {selectedCanvasAssignment?.points_possible})
+                    Total Grade (out of {selectedCanvasAssignment?.points_possible})
                   </label>
                   <input
                     type="number"
@@ -708,12 +828,12 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
                   {isPostingGrade ? (
                     <>Posting...</>
                   ) : (
-                    <><CheckCircle2 className="h-5 w-5" /> Post Grade to Canvas</>
+                    <><CheckCircle2 className="h-5 w-5" /> Post Grade & Rubric to Canvas</>
                   )}
                 </button>
                 {postSuccess && (
                   <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-xl text-green-700 dark:text-green-300 text-sm text-center">
-                    ✓ Grade posted successfully to Canvas!
+                    ✓ Grade and rubric posted successfully to Canvas!
                   </div>
                 )}
               </div>

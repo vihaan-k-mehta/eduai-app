@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { action, courseId, assignmentId, studentId, grade, comment } = body;
+  const { action, courseId, assignmentId, studentId, grade, comment, rubricAssessment } = body;
 
   try {
     switch (action) {
@@ -93,7 +93,8 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "courseId, assignmentId, and studentId required" }, { status: 400 });
         }
 
-        const submission: { submission: { posted_grade?: string }; comment?: { text_comment: string } } = {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const submission: Record<string, any> = {
           submission: {}
         };
 
@@ -103,6 +104,12 @@ export async function POST(request: NextRequest) {
 
         if (comment) {
           submission.comment = { text_comment: comment };
+        }
+
+        // Add rubric assessment if provided
+        // rubricAssessment should be: { [criterionId]: { points: number, comments?: string } }
+        if (rubricAssessment && Object.keys(rubricAssessment).length > 0) {
+          submission.rubric_assessment = rubricAssessment;
         }
 
         const result = await canvasAPI(
