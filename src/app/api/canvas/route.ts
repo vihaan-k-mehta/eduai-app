@@ -154,31 +154,35 @@ export async function POST(request: NextRequest) {
 
         // If rubric criteria provided, create rubric
         if (rubricCriteria && rubricCriteria.length > 0) {
+          // Build criteria object with indexed keys
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const rubricPayload: Record<string, any> = {
+          const criteriaObj: Record<string, any> = {};
+          rubricCriteria.forEach((criterion: { name: string; points: number; description: string }, index: number) => {
+            criteriaObj[index.toString()] = {
+              description: criterion.name,
+              long_description: criterion.description || "",
+              points: criterion.points,
+              ratings: {
+                "0": { description: "Full Marks", points: criterion.points },
+                "1": { description: "Partial", points: Math.floor(criterion.points / 2) },
+                "2": { description: "No Marks", points: 0 }
+              }
+            };
+          });
+
+          const rubricPayload = {
             rubric: {
               title: `${title} Rubric`,
               points_possible: totalPoints || 100,
+              criteria: criteriaObj
             },
             rubric_association: {
               association_id: newAssignment.id,
               association_type: "Assignment",
               use_for_grading: true,
-              purpose: "grading",
+              purpose: "grading"
             }
           };
-
-          // Add criteria
-          rubricCriteria.forEach((criterion: { name: string; points: number; description: string }, index: number) => {
-            rubricPayload[`rubric[criteria][${index}]`] = {
-              description: criterion.name,
-              points: criterion.points,
-              ratings: [
-                { description: "Full Marks", points: criterion.points },
-                { description: "No Marks", points: 0 }
-              ]
-            };
-          });
 
           try {
             await canvasAPI(`/courses/${courseId}/rubrics`, "POST", rubricPayload);
