@@ -120,7 +120,7 @@ export default function Home() {
           <p className="text-lg text-slate-600 dark:text-slate-400 mb-10">Built with ❤️ by students for educators</p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
             <TeamCard name="Varun Panchagnula" role="Researcher" />
-            <TeamCard name="Vihaan Nanduri" role="Test Engineer" />
+            <TeamCard name="Vihaan Nanduri" role="Didn't do anything" />
             <TeamCard name="Vihaan Mehta" role="Developer" />
             <TeamCard name="Samar Jadhav" role="Brainstormer" />
           </div>
