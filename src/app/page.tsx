@@ -193,3 +193,4 @@ function TeamCard({ name, role }: { name: string; role: string }) {
     </div>
   );
 }
+
