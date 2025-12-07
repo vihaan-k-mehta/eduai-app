@@ -1,14 +1,49 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   GraduationCap, FileCheck, BookOpen, MessageSquare, BarChart3,
   Home, Settings, Upload, Send, Sparkles, TrendingUp, Users, CheckCircle2,
   Calendar, ChevronLeft, ChevronRight, Clock, Plus, X, AlertTriangle,
-  ClipboardList, Trash2, Eye
+  ClipboardList, Trash2, Eye, RefreshCw, ExternalLink, Download
 } from "lucide-react";
 import Link from "next/link";
 
-type Tab = "overview" | "grading" | "lessons" | "chat" | "analytics" | "calendar" | "assignments";
+type Tab = "overview" | "grading" | "lessons" | "chat" | "analytics" | "calendar" | "assignments" | "canvas";
+
+// Canvas types
+interface CanvasCourse {
+  id: number;
+  name: string;
+  course_code: string;
+}
+
+interface CanvasAssignment {
+  id: number;
+  name: string;
+  description: string;
+  due_at: string | null;
+  points_possible: number;
+  rubric?: CanvasRubricCriterion[];
+}
+
+interface CanvasRubricCriterion {
+  id: string;
+  description: string;
+  points: number;
+  ratings: { description: string; points: number }[];
+}
+
+interface CanvasSubmission {
+  id: number;
+  user_id: number;
+  user?: { name: string; id: number };
+  body: string | null;
+  grade: string | null;
+  score: number | null;
+  submitted_at: string | null;
+  workflow_state: string;
+  attachments?: { url: string; filename: string }[];
+}
 
 interface ScheduledLesson {
   id: string;
@@ -106,6 +141,9 @@ export default function Dashboard() {
           <NavItem icon={<Calendar />} label="Calendar" active={activeTab === "calendar"} onClick={() => setActiveTab("calendar")} />
           <NavItem icon={<MessageSquare />} label="AI Assistant" active={activeTab === "chat"} onClick={() => setActiveTab("chat")} />
           <NavItem icon={<BarChart3 />} label="Analytics" active={activeTab === "analytics"} onClick={() => setActiveTab("analytics")} />
+          <div className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-700">
+            <NavItem icon={<ExternalLink />} label="Canvas LMS" active={activeTab === "canvas"} onClick={() => setActiveTab("canvas")} />
+          </div>
         </nav>
 
         <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
@@ -122,6 +160,7 @@ export default function Dashboard() {
         {activeTab === "calendar" && <CalendarTab scheduledLessons={scheduledLessons} setScheduledLessons={setScheduledLessons} onRemoveLesson={removeLessonFromCalendar} />}
         {activeTab === "chat" && <ChatTab />}
         {activeTab === "analytics" && <AnalyticsTab />}
+        {activeTab === "canvas" && <CanvasTab />}
       </main>
     </div>
   );
@@ -1560,6 +1599,357 @@ function CalendarTab({ scheduledLessons, setScheduledLessons, onRemoveLesson }: 
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CanvasTab() {
+  const [courses, setCourses] = useState<CanvasCourse[]>([]);
+  const [selectedCourse, setSelectedCourse] = useState<CanvasCourse | null>(null);
+  const [assignments, setAssignments] = useState<CanvasAssignment[]>([]);
+  const [selectedAssignment, setSelectedAssignment] = useState<CanvasAssignment | null>(null);
+  const [submissions, setSubmissions] = useState<CanvasSubmission[]>([]);
+  const [selectedSubmission, setSelectedSubmission] = useState<CanvasSubmission | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [gradeInput, setGradeInput] = useState("");
+  const [commentInput, setCommentInput] = useState("");
+  const [isGrading, setIsGrading] = useState(false);
+  const [isAutoGrading, setIsAutoGrading] = useState(false);
+  const [autoGradeFeedback, setAutoGradeFeedback] = useState("");
+
+  // Fetch courses on mount
+  useEffect(() => {
+    fetchCourses();
+  }, []);
+
+  const fetchCourses = async () => {
+    setIsLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/canvas?action=courses");
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setCourses(data.courses || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch courses");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchAssignments = async (courseId: number) => {
+    setIsLoading(true);
+    setAssignments([]);
+    setSelectedAssignment(null);
+    setSubmissions([]);
+    try {
+      const res = await fetch(`/api/canvas?action=assignments&courseId=${courseId}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setAssignments(data.assignments || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch assignments");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchSubmissions = async (courseId: number, assignmentId: number) => {
+    setIsLoading(true);
+    setSubmissions([]);
+    setSelectedSubmission(null);
+    try {
+      const res = await fetch(`/api/canvas?action=submissions&courseId=${courseId}&assignmentId=${assignmentId}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setSubmissions(data.submissions || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch submissions");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCourseSelect = (course: CanvasCourse) => {
+    setSelectedCourse(course);
+    setSelectedAssignment(null);
+    setSubmissions([]);
+    fetchAssignments(course.id);
+  };
+
+  const handleAssignmentSelect = (assignment: CanvasAssignment) => {
+    setSelectedAssignment(assignment);
+    if (selectedCourse) {
+      fetchSubmissions(selectedCourse.id, assignment.id);
+    }
+  };
+
+  const handlePostGrade = async () => {
+    if (!selectedCourse || !selectedAssignment || !selectedSubmission) return;
+    setIsGrading(true);
+    try {
+      const res = await fetch("/api/canvas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "postGrade",
+          courseId: selectedCourse.id,
+          assignmentId: selectedAssignment.id,
+          studentId: selectedSubmission.user_id,
+          grade: gradeInput,
+          comment: commentInput,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      // Refresh submissions
+      fetchSubmissions(selectedCourse.id, selectedAssignment.id);
+      setGradeInput("");
+      setCommentInput("");
+      setSelectedSubmission(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to post grade");
+    } finally {
+      setIsGrading(false);
+    }
+  };
+
+  const handleAutoGrade = async () => {
+    if (!selectedSubmission?.body || !selectedAssignment) return;
+    setIsAutoGrading(true);
+    setAutoGradeFeedback("");
+    try {
+      const rubricText = selectedAssignment.rubric
+        ? selectedAssignment.rubric.map(r => `${r.description} (${r.points} pts)`).join("\n")
+        : `Total points: ${selectedAssignment.points_possible}`;
+
+      const res = await fetch("/api/grade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentWork: selectedSubmission.body,
+          rubric: rubricText,
+          assignmentType: selectedAssignment.name,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setAutoGradeFeedback(data.feedback);
+      // Extract grade from feedback if possible
+      const gradeMatch = data.feedback.match(/(\d+)\s*\/\s*(\d+)/);
+      if (gradeMatch) {
+        setGradeInput(gradeMatch[1]);
+      }
+      setCommentInput(data.feedback);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Auto-grade failed");
+    } finally {
+      setIsAutoGrading(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Canvas LMS</h1>
+          <p className="text-slate-600 dark:text-slate-400">Grade assignments and sync with Canvas</p>
+        </div>
+        <button
+          onClick={fetchCourses}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition"
+        >
+          <RefreshCw className="h-4 w-4" />
+          Refresh
+        </button>
+      </div>
+
+      {error && (
+        <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-xl">
+          {error}
+          <button onClick={() => setError("")} className="ml-2 underline">Dismiss</button>
+        </div>
+      )}
+
+      <div className="grid lg:grid-cols-3 gap-6">
+        {/* Courses */}
+        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
+          <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Your Courses</h3>
+          {isLoading && courses.length === 0 ? (
+            <p className="text-slate-500">Loading courses...</p>
+          ) : courses.length === 0 ? (
+            <p className="text-slate-500">No courses found. Make sure you have teacher access.</p>
+          ) : (
+            <div className="space-y-2">
+              {courses.map((course) => (
+                <button
+                  key={course.id}
+                  onClick={() => handleCourseSelect(course)}
+                  className={`w-full text-left p-3 rounded-xl transition ${
+                    selectedCourse?.id === course.id
+                      ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                      : "bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600"
+                  }`}
+                >
+                  <p className="font-medium text-slate-900 dark:text-white">{course.name}</p>
+                  <p className="text-sm text-slate-500">{course.course_code}</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Assignments */}
+        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
+          <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">
+            {selectedCourse ? `Assignments - ${selectedCourse.name}` : "Select a Course"}
+          </h3>
+          {!selectedCourse ? (
+            <p className="text-slate-500">Select a course to view assignments</p>
+          ) : assignments.length === 0 ? (
+            <p className="text-slate-500">{isLoading ? "Loading..." : "No assignments found"}</p>
+          ) : (
+            <div className="space-y-2 max-h-[500px] overflow-auto">
+              {assignments.map((assignment) => (
+                <button
+                  key={assignment.id}
+                  onClick={() => handleAssignmentSelect(assignment)}
+                  className={`w-full text-left p-3 rounded-xl transition ${
+                    selectedAssignment?.id === assignment.id
+                      ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                      : "bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600"
+                  }`}
+                >
+                  <p className="font-medium text-slate-900 dark:text-white">{assignment.name}</p>
+                  <div className="flex gap-2 mt-1 text-xs">
+                    <span className="text-blue-600">{assignment.points_possible} pts</span>
+                    {assignment.due_at && (
+                      <span className="text-slate-500">Due: {new Date(assignment.due_at).toLocaleDateString()}</span>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Submissions */}
+        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
+          <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">
+            {selectedAssignment ? `Submissions - ${selectedAssignment.name}` : "Select an Assignment"}
+          </h3>
+          {!selectedAssignment ? (
+            <p className="text-slate-500">Select an assignment to view submissions</p>
+          ) : submissions.length === 0 ? (
+            <p className="text-slate-500">{isLoading ? "Loading..." : "No submissions yet"}</p>
+          ) : (
+            <div className="space-y-2 max-h-[500px] overflow-auto">
+              {submissions.map((sub) => (
+                <button
+                  key={sub.id}
+                  onClick={() => { setSelectedSubmission(sub); setGradeInput(sub.score?.toString() || ""); }}
+                  className={`w-full text-left p-3 rounded-xl transition ${
+                    selectedSubmission?.id === sub.id
+                      ? "bg-blue-100 dark:bg-blue-900/30"
+                      : "bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600"
+                  }`}
+                >
+                  <p className="font-medium text-slate-900 dark:text-white">{sub.user?.name || `Student ${sub.user_id}`}</p>
+                  <div className="flex gap-2 mt-1 text-xs">
+                    <span className={sub.workflow_state === "submitted" ? "text-green-600" : "text-orange-600"}>
+                      {sub.workflow_state}
+                    </span>
+                    {sub.score !== null && (
+                      <span className="text-blue-600">{sub.score}/{selectedAssignment.points_possible}</span>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Grading Panel */}
+      {selectedSubmission && (
+        <div className="mt-6 bg-white dark:bg-slate-800 rounded-2xl p-6">
+          <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">
+            Grade: {selectedSubmission.user?.name || `Student ${selectedSubmission.user_id}`}
+          </h3>
+          <div className="grid lg:grid-cols-2 gap-6">
+            <div>
+              <h4 className="font-medium text-slate-700 dark:text-slate-300 mb-2">Student Work</h4>
+              <div className="p-4 bg-slate-50 dark:bg-slate-700 rounded-xl max-h-[300px] overflow-auto">
+                {selectedSubmission.body ? (
+                  <div dangerouslySetInnerHTML={{ __html: selectedSubmission.body }} className="prose dark:prose-invert text-sm" />
+                ) : selectedSubmission.attachments?.length ? (
+                  <div className="space-y-2">
+                    {selectedSubmission.attachments.map((att, i) => (
+                      <a key={i} href={att.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-blue-600 hover:underline">
+                        <Download className="h-4 w-4" />
+                        {att.filename}
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-slate-500">No submission content</p>
+                )}
+              </div>
+              {selectedSubmission.body && (
+                <button
+                  onClick={handleAutoGrade}
+                  disabled={isAutoGrading}
+                  className="mt-3 w-full bg-purple-600 text-white py-2 rounded-xl font-semibold hover:bg-purple-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  {isAutoGrading ? "Analyzing..." : "AI Auto-Grade"}
+                </button>
+              )}
+            </div>
+            <div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Grade (out of {selectedAssignment?.points_possible})
+                  </label>
+                  <input
+                    type="number"
+                    value={gradeInput}
+                    onChange={(e) => setGradeInput(e.target.value)}
+                    max={selectedAssignment?.points_possible}
+                    className="w-full p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Feedback Comment</label>
+                  <textarea
+                    value={commentInput}
+                    onChange={(e) => setCommentInput(e.target.value)}
+                    rows={4}
+                    className="w-full p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 resize-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter feedback for student..."
+                  />
+                </div>
+                <button
+                  onClick={handlePostGrade}
+                  disabled={isGrading || !gradeInput}
+                  className="w-full bg-green-600 text-white py-3 rounded-xl font-semibold hover:bg-green-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <CheckCircle2 className="h-5 w-5" />
+                  {isGrading ? "Posting..." : "Post Grade to Canvas"}
+                </button>
+              </div>
+              {autoGradeFeedback && (
+                <div className="mt-4 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-xl">
+                  <h4 className="font-medium text-purple-700 dark:text-purple-300 mb-2">AI Feedback</h4>
+                  <pre className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{autoGradeFeedback}</pre>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
