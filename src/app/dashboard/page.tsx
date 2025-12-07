@@ -283,6 +283,7 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
   const [selectedCanvasSubmission, setSelectedCanvasSubmission] = useState<CanvasSubmission | null>(null);
   const [canvasLoading, setCanvasLoading] = useState(false);
   const [gradeToPost, setGradeToPost] = useState("");
+  const [teacherComment, setTeacherComment] = useState("");
   const [isPostingGrade, setIsPostingGrade] = useState(false);
   const [postSuccess, setPostSuccess] = useState(false);
 
@@ -337,7 +338,7 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
           assignmentId: selectedCanvasAssignment.id,
           studentId: selectedCanvasSubmission.user_id,
           grade: gradeToPost,
-          comment: feedback,
+          comment: teacherComment, // Use teacher's custom comment instead of AI feedback
         }),
       });
       const data = await res.json();
@@ -357,6 +358,7 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
     const plainText = sub.body ? sub.body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() : "";
     setStudentWork(plainText);
     setGradeToPost(sub.score?.toString() || "");
+    setTeacherComment("");
     setFeedback("");
     setAiDetection(null);
     setPostSuccess(false);
@@ -657,7 +659,7 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
           </div>
 
           {/* Post to Canvas */}
-          {selectedCanvasSubmission && feedback && (
+          {selectedCanvasSubmission && (
             <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
               <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4 flex items-center gap-2">
                 <Upload className="h-5 w-5" /> Post Grade to Canvas
@@ -676,6 +678,25 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
                     placeholder="Enter grade..."
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Your Comment to Student (optional)
+                  </label>
+                  <textarea
+                    value={teacherComment}
+                    onChange={(e) => setTeacherComment(e.target.value)}
+                    placeholder="Write your feedback for the student here..."
+                    className="w-full h-24 p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 resize-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {feedback && (
+                    <button
+                      onClick={() => setTeacherComment(feedback)}
+                      className="mt-2 text-sm text-blue-600 hover:text-blue-700 underline"
+                    >
+                      ↑ Copy AI feedback above as your comment
+                    </button>
+                  )}
+                </div>
                 <button
                   onClick={postGradeToCanvas}
                   disabled={isPostingGrade || !gradeToPost}
@@ -684,7 +705,7 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
                   {isPostingGrade ? (
                     <>Posting...</>
                   ) : (
-                    <><CheckCircle2 className="h-5 w-5" /> Post Grade & Feedback to Canvas</>
+                    <><CheckCircle2 className="h-5 w-5" /> Post Grade to Canvas</>
                   )}
                 </button>
                 {postSuccess && (
@@ -1018,6 +1039,58 @@ function AssignmentsTab({ assignments, onAddAssignment, onRemoveAssignment, onAd
   const [scheduleTime, setScheduleTime] = useState("9:00 AM");
   const [addedToCalendar, setAddedToCalendar] = useState<Set<string>>(new Set());
 
+  // Canvas state
+  const [showCanvasPost, setShowCanvasPost] = useState(false);
+  const [canvasCourses, setCanvasCourses] = useState<CanvasCourse[]>([]);
+  const [selectedCourseId, setSelectedCourseId] = useState<string>("");
+  const [isPostingToCanvas, setIsPostingToCanvas] = useState(false);
+  const [canvasPostSuccess, setCanvasPostSuccess] = useState<string | null>(null);
+  const [canvasPostError, setCanvasPostError] = useState<string | null>(null);
+
+  // Fetch Canvas courses
+  const fetchCanvasCourses = async () => {
+    try {
+      const res = await fetch("/api/canvas?action=courses");
+      const data = await res.json();
+      if (!data.error) setCanvasCourses(data.courses || []);
+    } catch (e) { console.error(e); }
+  };
+
+  // Post assignment to Canvas
+  const postAssignmentToCanvas = async (assignment: Assignment) => {
+    if (!selectedCourseId) return;
+    setIsPostingToCanvas(true);
+    setCanvasPostError(null);
+    setCanvasPostSuccess(null);
+    try {
+      const res = await fetch("/api/canvas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "createAssignment",
+          courseId: selectedCourseId,
+          title: assignment.title,
+          description: assignment.description,
+          dueDate: assignment.dueDate,
+          totalPoints: assignment.totalPoints,
+          rubricCriteria: assignment.rubricCriteria,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setCanvasPostError(data.error);
+      } else {
+        setCanvasPostSuccess(assignment.title);
+        setShowCanvasPost(false);
+      }
+    } catch (e) {
+      setCanvasPostError("Failed to post to Canvas");
+      console.error(e);
+    } finally {
+      setIsPostingToCanvas(false);
+    }
+  };
+
   const handleAddToCalendar = (assignment: Assignment) => {
     setSchedulingAssignment(assignment);
     setScheduleDate(assignment.dueDate || new Date().toISOString().split("T")[0]);
@@ -1080,6 +1153,68 @@ function AssignmentsTab({ assignments, onAddAssignment, onRemoveAssignment, onAd
     <div>
       <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-6">Assignment Creator</h1>
 
+      {/* Canvas Post Modal */}
+      {showCanvasPost && viewingAssignment && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-md shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <ExternalLink className="h-5 w-5 text-orange-600" /> Post to Canvas
+              </h2>
+              <button onClick={() => { setShowCanvasPost(false); setViewingAssignment(null); }} className="text-slate-500 hover:text-slate-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div className="p-3 bg-slate-100 dark:bg-slate-700 rounded-xl">
+                <p className="font-medium text-slate-900 dark:text-white">{viewingAssignment.title}</p>
+                <p className="text-sm text-slate-500">{viewingAssignment.totalPoints} pts • {viewingAssignment.rubricCriteria.length} rubric criteria</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Select Canvas Course</label>
+                <select
+                  value={selectedCourseId}
+                  onChange={(e) => setSelectedCourseId(e.target.value)}
+                  className="w-full p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-orange-500"
+                >
+                  <option value="">-- Select Course --</option>
+                  {canvasCourses.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              {canvasPostError && (
+                <div className="p-3 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-xl text-sm">
+                  {canvasPostError}
+                </div>
+              )}
+              {canvasPostSuccess && (
+                <div className="p-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-xl text-sm">
+                  ✓ {canvasPostSuccess} posted to Canvas!
+                </div>
+              )}
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => { setShowCanvasPost(false); setViewingAssignment(null); }}
+                  className="flex-1 py-3 rounded-xl font-semibold border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => postAssignmentToCanvas(viewingAssignment)}
+                  disabled={isPostingToCanvas || !selectedCourseId}
+                  className="flex-1 bg-orange-600 text-white py-3 rounded-xl font-semibold hover:bg-orange-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {isPostingToCanvas ? "Posting..." : (
+                    <><ExternalLink className="h-4 w-4" /> Post to Canvas</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* View Assignment Modal */}
       {/* Schedule Modal */}
       {showScheduleModal && schedulingAssignment && (
@@ -1140,7 +1275,7 @@ function AssignmentsTab({ assignments, onAddAssignment, onRemoveAssignment, onAd
       )}
 
       {/* View Assignment Modal */}
-      {viewingAssignment && (
+      {viewingAssignment && !showCanvasPost && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-2xl shadow-xl max-h-[80vh] overflow-auto">
             <div className="flex items-center justify-between mb-4">
@@ -1347,6 +1482,13 @@ function AssignmentsTab({ assignments, onAddAssignment, onRemoveAssignment, onAd
                       </div>
                     </div>
                     <div className="flex gap-1">
+                      <button
+                        onClick={() => { setShowCanvasPost(true); setViewingAssignment(assignment); if (canvasCourses.length === 0) fetchCanvasCourses(); }}
+                        className="p-2 text-orange-600 hover:bg-orange-100 dark:hover:bg-orange-900/30 rounded-lg transition"
+                        title="Post to Canvas"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </button>
                       {addedToCalendar.has(assignment.id) ? (
                         <button
                           onClick={onGoToCalendar}

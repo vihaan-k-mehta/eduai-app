@@ -39,7 +39,8 @@ export async function GET(request: NextRequest) {
         if (!courseId) {
           return NextResponse.json({ error: "courseId required" }, { status: 400 });
         }
-        const assignments = await canvasAPI(`/courses/${courseId}/assignments?per_page=50&order_by=due_at`);
+        // Include rubric data with assignments
+        const assignments = await canvasAPI(`/courses/${courseId}/assignments?per_page=50&order_by=due_at&include[]=rubric`);
         return NextResponse.json({ assignments });
       }
 
@@ -82,7 +83,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const { action, courseId, assignmentId, studentId, grade, comment } = await request.json();
+  const body = await request.json();
+  const { action, courseId, assignmentId, studentId, grade, comment } = body;
 
   try {
     switch (action) {
@@ -110,6 +112,83 @@ export async function POST(request: NextRequest) {
         );
 
         return NextResponse.json({ success: true, result });
+      }
+
+      case "createAssignment": {
+        // Create a new assignment with rubric in Canvas
+        const { title, description, dueDate, totalPoints, rubricCriteria } = body;
+        if (!courseId || !title) {
+          return NextResponse.json({ error: "courseId and title required" }, { status: 400 });
+        }
+
+        // Build the assignment payload
+        const assignmentPayload: {
+          assignment: {
+            name: string;
+            description?: string;
+            due_at?: string;
+            points_possible: number;
+            submission_types: string[];
+            published: boolean;
+          };
+        } = {
+          assignment: {
+            name: title,
+            description: description || "",
+            points_possible: totalPoints || 100,
+            submission_types: ["online_text_entry", "online_upload"],
+            published: true,
+          }
+        };
+
+        if (dueDate) {
+          assignmentPayload.assignment.due_at = new Date(dueDate).toISOString();
+        }
+
+        // Create the assignment first
+        const newAssignment = await canvasAPI(
+          `/courses/${courseId}/assignments`,
+          "POST",
+          assignmentPayload
+        );
+
+        // If rubric criteria provided, create rubric
+        if (rubricCriteria && rubricCriteria.length > 0) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const rubricPayload: Record<string, any> = {
+            rubric: {
+              title: `${title} Rubric`,
+              points_possible: totalPoints || 100,
+            },
+            rubric_association: {
+              association_id: newAssignment.id,
+              association_type: "Assignment",
+              use_for_grading: true,
+              purpose: "grading",
+            }
+          };
+
+          // Add criteria
+          rubricCriteria.forEach((criterion: { name: string; points: number; description: string }, index: number) => {
+            rubricPayload[`rubric[criteria][${index}]`] = {
+              description: criterion.name,
+              points: criterion.points,
+              ratings: [
+                { description: "Full Marks", points: criterion.points },
+                { description: "No Marks", points: 0 }
+              ]
+            };
+          });
+
+          try {
+            await canvasAPI(`/courses/${courseId}/rubrics`, "POST", rubricPayload);
+          } catch (rubricError) {
+            console.error("Rubric creation failed:", rubricError);
+            // Assignment still created, just without rubric
+          }
+        }
+
+        return NextResponse.json({ success: true, assignment: newAssignment });
       }
 
       default:
