@@ -1905,18 +1905,113 @@ interface ChatTabProps {
 interface ChatMessage {
   role: string;
   content: string;
+  timestamp?: string;
   action?: {
     type: "assignment" | "lesson" | "grade";
     data: Assignment | SavedLessonPlan | Omit<PendingGrade, "id" | "createdAt" | "status">;
   };
 }
 
+interface ChatSession {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+const INITIAL_MESSAGE: ChatMessage = {
+  role: "assistant",
+  content: "Hello! I'm your AI teaching assistant. I can help you with:\n\n• **Create assignments** - \"create an assignment about [topic]\"\n• **Generate lesson plans** - \"make a lesson plan for [topic]\"\n• **Grade work** - \"grade this: [student work]\"\n• **Add to calendar** - \"schedule [assignment/lesson] for [date]\"\n• **Answer questions** - Ask me anything about teaching!\n\nWhat would you like to do?",
+  timestamp: new Date().toISOString()
+};
+
 function ChatTab({ onCreateAssignment, onCreateLessonPlan, onAddPendingGrade, classes }: ChatTabProps) {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "assistant", content: "Hello! I'm your AI teaching assistant. I can:\n\n• **Create assignments** - Just say \"create an assignment about [topic]\"\n• **Generate lesson plans** - Say \"make a lesson plan for [topic]\"\n• **Grade student work** - Say \"grade this: [student work]\" with the rubric\n\nHow can I help you today?" }
-  ]);
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("eduai-chat-sessions");
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          return [];
+        }
+      }
+    }
+    return [];
+  });
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("eduai-current-session") || null;
+    }
+    return null;
+  });
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Get current session's messages
+  const currentSession = chatSessions.find(s => s.id === currentSessionId);
+  const messages = currentSession?.messages || [INITIAL_MESSAGE];
+
+  // Save sessions to localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("eduai-chat-sessions", JSON.stringify(chatSessions));
+    }
+  }, [chatSessions]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && currentSessionId) {
+      localStorage.setItem("eduai-current-session", currentSessionId);
+    }
+  }, [currentSessionId]);
+
+  const createNewSession = () => {
+    const newSession: ChatSession = {
+      id: Date.now().toString(),
+      title: "New Chat",
+      messages: [INITIAL_MESSAGE],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    setChatSessions(prev => [newSession, ...prev]);
+    setCurrentSessionId(newSession.id);
+    setShowHistory(false);
+  };
+
+  const updateCurrentSession = (newMessages: ChatMessage[], title?: string) => {
+    if (!currentSessionId) {
+      // Create a new session
+      const newSession: ChatSession = {
+        id: Date.now().toString(),
+        title: title || "New Chat",
+        messages: newMessages,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      setChatSessions(prev => [newSession, ...prev]);
+      setCurrentSessionId(newSession.id);
+    } else {
+      setChatSessions(prev => prev.map(s =>
+        s.id === currentSessionId
+          ? { ...s, messages: newMessages, updatedAt: new Date().toISOString(), title: title || s.title }
+          : s
+      ));
+    }
+  };
+
+  const deleteSession = (id: string) => {
+    setChatSessions(prev => prev.filter(s => s.id !== id));
+    if (currentSessionId === id) {
+      setCurrentSessionId(null);
+    }
+  };
+
+  const loadSession = (id: string) => {
+    setCurrentSessionId(id);
+    setShowHistory(false);
+  };
 
   const detectIntent = (text: string): { type: string; topic?: string } => {
     const lower = text.toLowerCase();
@@ -1932,18 +2027,28 @@ function ChatTab({ onCreateAssignment, onCreateLessonPlan, onAddPendingGrade, cl
     return { type: "chat" };
   };
 
+  const addMessage = (newMsg: ChatMessage, sessionTitle?: string) => {
+    const updatedMessages = [...messages, newMsg];
+    updateCurrentSession(updatedMessages, sessionTitle);
+  };
+
   const handleSend = async () => {
     if (!message.trim() || isLoading) return;
     const userMessage = message;
     setMessage("");
-    setMessages(prev => [...prev, { role: "user", content: userMessage }]);
+
+    const userMsg: ChatMessage = { role: "user", content: userMessage, timestamp: new Date().toISOString() };
+    const updatedMessages = [...messages, userMsg];
+
+    // Generate session title from first user message
+    const sessionTitle = messages.length <= 1 ? userMessage.slice(0, 40) + (userMessage.length > 40 ? "..." : "") : undefined;
+    updateCurrentSession(updatedMessages, sessionTitle);
     setIsLoading(true);
 
     const intent = detectIntent(userMessage);
 
     try {
       if (intent.type === "assignment" && intent.topic) {
-        // Generate assignment via AI
         const response = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1974,19 +2079,19 @@ function ChatTab({ onCreateAssignment, onCreateLessonPlan, onAddPendingGrade, cl
               totalPoints: assignmentData.totalPoints || 100,
               dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
             };
-            setMessages(prev => [...prev, {
+            addMessage({
               role: "assistant",
               content: `I've created an assignment: **${newAssignment.title}**\n\n📝 Subject: ${newAssignment.subject}\n📊 Total Points: ${newAssignment.totalPoints}\n📋 Rubric: ${rubricCriteria.length} criteria\n\nClick below to add it to your assignments!`,
+              timestamp: new Date().toISOString(),
               action: { type: "assignment", data: newAssignment as Assignment }
-            }]);
+            });
           } else {
             throw new Error("No JSON found");
           }
         } catch {
-          setMessages(prev => [...prev, { role: "assistant", content: `I'll help you create an assignment about "${intent.topic}". Here's a suggestion:\n\n${data.message}` }]);
+          addMessage({ role: "assistant", content: `I'll help you create an assignment about "${intent.topic}". Here's a suggestion:\n\n${data.message}`, timestamp: new Date().toISOString() });
         }
       } else if (intent.type === "lesson" && intent.topic) {
-        // Generate lesson plan
         const response = await fetch("/api/lesson", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -2001,19 +2106,18 @@ function ChatTab({ onCreateAssignment, onCreateLessonPlan, onAddPendingGrade, cl
             subject: "General",
             content: data.lessonPlan,
           };
-          setMessages(prev => [...prev, {
+          addMessage({
             role: "assistant",
-            content: `I've created a lesson plan: **Lesson: ${newLesson.topic}**\n\n📚 Topic: ${newLesson.topic}\n🎓 Grade: ${newLesson.grade}\n\nClick below to save it!`,
+            content: `I've created a lesson plan: **${newLesson.topic}**\n\n📚 Topic: ${newLesson.topic}\n🎓 Grade: ${newLesson.grade}\n\nClick below to save it!`,
+            timestamp: new Date().toISOString(),
             action: { type: "lesson", data: newLesson as SavedLessonPlan }
-          }]);
+          });
         } else {
-          setMessages(prev => [...prev, { role: "assistant", content: data.error || "Failed to generate lesson plan." }]);
+          addMessage({ role: "assistant", content: data.error || "Failed to generate lesson plan.", timestamp: new Date().toISOString() });
         }
       } else {
-        // Regular chat
-        const chatHistory = messages.filter(m => m.role !== "assistant" || messages.indexOf(m) !== 0)
-          .map(m => ({ role: m.role, content: m.content }));
-        chatHistory.push({ role: "user", content: userMessage });
+        // Regular chat - send full history for context
+        const chatHistory = updatedMessages.slice(1).map(m => ({ role: m.role, content: m.content }));
 
         const response = await fetch("/api/chat", {
           method: "POST",
@@ -2023,91 +2127,192 @@ function ChatTab({ onCreateAssignment, onCreateLessonPlan, onAddPendingGrade, cl
         const data = await response.json();
 
         if (data.error) {
-          setMessages(prev => [...prev, { role: "assistant", content: `Error: ${data.error}` }]);
+          addMessage({ role: "assistant", content: `Error: ${data.error}`, timestamp: new Date().toISOString() });
         } else {
-          setMessages(prev => [...prev, { role: "assistant", content: data.message }]);
+          addMessage({ role: "assistant", content: data.message, timestamp: new Date().toISOString() });
         }
       }
     } catch {
-      setMessages(prev => [...prev, { role: "assistant", content: "Sorry, I encountered an error. Please try again." }]);
+      addMessage({ role: "assistant", content: "Sorry, I encountered an error. Please try again.", timestamp: new Date().toISOString() });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleAction = (msg: ChatMessage) => {
+  const handleAction = (msg: ChatMessage, index: number) => {
     if (!msg.action) return;
     if (msg.action.type === "assignment") {
       onCreateAssignment(msg.action.data as Omit<Assignment, "id" | "createdAt">);
-      setMessages(prev => prev.map(m => m === msg ? { ...m, content: m.content + "\n\n✅ **Assignment added!**", action: undefined } : m));
     } else if (msg.action.type === "lesson") {
       onCreateLessonPlan(msg.action.data as Omit<SavedLessonPlan, "id" | "createdAt">);
-      setMessages(prev => prev.map(m => m === msg ? { ...m, content: m.content + "\n\n✅ **Lesson plan saved!**", action: undefined } : m));
     } else if (msg.action.type === "grade") {
       onAddPendingGrade(msg.action.data as Omit<PendingGrade, "id" | "createdAt" | "status">);
-      setMessages(prev => prev.map(m => m === msg ? { ...m, content: m.content + "\n\n✅ **Added to pending grades!**", action: undefined } : m));
     }
+    // Update the message to remove the action button
+    const updatedMessages = messages.map((m, i) =>
+      i === index ? { ...m, content: m.content + "\n\n✅ **Added successfully!**", action: undefined } : m
+    );
+    updateCurrentSession(updatedMessages);
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col">
-      <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-6">AI Teaching Assistant</h1>
-      <div className="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-6 flex flex-col">
-        <div className="flex-1 overflow-auto space-y-4 mb-4">
-          {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[80%] rounded-2xl ${
-                msg.role === "user"
-                  ? "bg-blue-600 text-white p-4"
-                  : "bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white"
-              }`}>
-                <div className="p-4 whitespace-pre-wrap">{msg.content}</div>
-                {msg.action && (
-                  <div className="px-4 pb-4">
+    <div className="h-[calc(100vh-8rem)] flex gap-4">
+      {/* Chat History Sidebar */}
+      <div className={`${showHistory ? "w-72" : "w-0"} transition-all duration-300 overflow-hidden`}>
+        <div className="w-72 h-full bg-white dark:bg-slate-800 rounded-2xl p-4 flex flex-col">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-slate-900 dark:text-white">Chat History</h3>
+            <button onClick={() => setShowHistory(false)} className="text-slate-400 hover:text-slate-600">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <button
+            onClick={createNewSession}
+            className="w-full mb-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2"
+          >
+            <Plus className="h-4 w-4" /> New Chat
+          </button>
+          <div className="flex-1 overflow-auto space-y-2">
+            {chatSessions.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-4">No chat history yet</p>
+            ) : (
+              chatSessions.map(session => (
+                <div
+                  key={session.id}
+                  className={`p-3 rounded-lg cursor-pointer transition group ${
+                    session.id === currentSessionId
+                      ? "bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700"
+                      : "bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600"
+                  }`}
+                  onClick={() => loadSession(session.id)}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-slate-900 dark:text-white text-sm truncate">{session.title}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        {new Date(session.updatedAt).toLocaleDateString()} · {session.messages.length - 1} messages
+                      </p>
+                    </div>
                     <button
-                      onClick={() => handleAction(msg)}
-                      className={`w-full py-2 rounded-lg font-medium transition ${
-                        msg.action.type === "assignment"
-                          ? "bg-orange-600 hover:bg-orange-700 text-white"
-                          : msg.action.type === "lesson"
-                          ? "bg-blue-600 hover:bg-blue-700 text-white"
-                          : "bg-purple-600 hover:bg-purple-700 text-white"
-                      }`}
+                      onClick={(e) => { e.stopPropagation(); deleteSession(session.id); }}
+                      className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 p-1"
                     >
-                      {msg.action.type === "assignment" && "➕ Add Assignment"}
-                      {msg.action.type === "lesson" && "💾 Save Lesson Plan"}
-                      {msg.action.type === "grade" && "📋 Add to Pending Grades"}
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
-                )}
-              </div>
-            </div>
-          ))}
-          {isLoading && (
-            <div className="flex justify-start">
-              <div className="bg-slate-100 dark:bg-slate-700 p-4 rounded-2xl">
-                <div className="flex gap-1">
-                  <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: "0ms"}}></div>
-                  <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: "150ms"}}></div>
-                  <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: "300ms"}}></div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Chat Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowHistory(!showHistory)}
+              className="p-2 bg-white dark:bg-slate-800 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition"
+              title="Chat History"
+            >
+              <ClipboardList className="h-5 w-5 text-slate-600 dark:text-slate-300" />
+            </button>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">AI Teaching Assistant</h1>
+          </div>
+          <button
+            onClick={createNewSession}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+          >
+            <Plus className="h-4 w-4" /> New Chat
+          </button>
+        </div>
+
+        <div className="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-6 flex flex-col min-h-0">
+          <div className="flex-1 overflow-auto space-y-4 mb-4">
+            {messages.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div className={`max-w-[80%] rounded-2xl ${
+                  msg.role === "user"
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white"
+                }`}>
+                  <div className="p-4 whitespace-pre-wrap">{msg.content}</div>
+                  {msg.timestamp && msg.role === "user" && (
+                    <div className="px-4 pb-2 text-xs text-blue-200">
+                      {new Date(msg.timestamp).toLocaleTimeString()}
+                    </div>
+                  )}
+                  {msg.action && (
+                    <div className="px-4 pb-4">
+                      <button
+                        onClick={() => handleAction(msg, i)}
+                        className={`w-full py-2 rounded-lg font-medium transition ${
+                          msg.action.type === "assignment"
+                            ? "bg-orange-600 hover:bg-orange-700 text-white"
+                            : msg.action.type === "lesson"
+                            ? "bg-blue-600 hover:bg-blue-700 text-white"
+                            : "bg-purple-600 hover:bg-purple-700 text-white"
+                        }`}
+                      >
+                        {msg.action.type === "assignment" && "➕ Add Assignment"}
+                        {msg.action.type === "lesson" && "💾 Save Lesson Plan"}
+                        {msg.action.type === "grade" && "📋 Add to Pending Grades"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
-          )}
-        </div>
-        <div className="flex gap-3">
-          <input
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            placeholder="Ask anything about teaching..."
-            className="flex-1 p-4 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-blue-500"
-            disabled={isLoading}
-          />
-          <button onClick={handleSend} disabled={isLoading} className="bg-blue-600 text-white p-4 rounded-xl hover:bg-blue-700 transition disabled:opacity-50">
-            <Send className="h-5 w-5" />
-          </button>
+            ))}
+            {isLoading && (
+              <div className="flex justify-start">
+                <div className="bg-slate-100 dark:bg-slate-700 p-4 rounded-2xl">
+                  <div className="flex gap-1">
+                    <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: "0ms"}}></div>
+                    <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: "150ms"}}></div>
+                    <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: "300ms"}}></div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Quick Actions */}
+          <div className="flex flex-wrap gap-2 mb-3">
+            <button
+              onClick={() => setMessage("Create an assignment about ")}
+              className="px-3 py-1.5 text-sm bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 rounded-full hover:bg-orange-200 dark:hover:bg-orange-900/50 transition"
+            >
+              📝 Create Assignment
+            </button>
+            <button
+              onClick={() => setMessage("Make a lesson plan for ")}
+              className="px-3 py-1.5 text-sm bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full hover:bg-blue-200 dark:hover:bg-blue-900/50 transition"
+            >
+              📚 Lesson Plan
+            </button>
+            <button
+              onClick={() => setMessage("What teaching strategies work best for ")}
+              className="px-3 py-1.5 text-sm bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-full hover:bg-purple-200 dark:hover:bg-purple-900/50 transition"
+            >
+              💡 Teaching Tips
+            </button>
+          </div>
+
+          <div className="flex gap-3">
+            <input
+              type="text"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              placeholder="Ask anything about teaching, create assignments, or generate lesson plans..."
+              className="flex-1 p-4 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white"
+              disabled={isLoading}
+            />
+            <button onClick={handleSend} disabled={isLoading} className="bg-blue-600 text-white p-4 rounded-xl hover:bg-blue-700 transition disabled:opacity-50">
+              <Send className="h-5 w-5" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
