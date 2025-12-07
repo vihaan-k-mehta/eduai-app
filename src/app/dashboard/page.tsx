@@ -1,8 +1,8 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import {
   GraduationCap, FileCheck, BookOpen, MessageSquare, BarChart3,
-  Home, Settings, Upload, Send, Sparkles, TrendingUp, Users, CheckCircle2,
+  Home, Settings, Upload, Send, Sparkles, Users, CheckCircle2,
   Calendar, ChevronLeft, ChevronRight, Clock, Plus, X, AlertTriangle,
   ClipboardList, Trash2, Eye, RefreshCw, ExternalLink, Download
 } from "lucide-react";
@@ -83,11 +83,75 @@ interface SavedLessonPlan {
   createdAt: string;
 }
 
+interface ClassSection {
+  id: string;
+  name: string; // e.g., "7A", "7B", "7C"
+  subject: string;
+  grade: string;
+  studentCount: number;
+  schedule: { day: string; time: string; duration: string }[];
+}
+
+interface PendingGrade {
+  id: string;
+  studentName: string;
+  assignmentTitle: string;
+  classSection: string;
+  studentWork: string;
+  suggestedGrade: number;
+  maxPoints: number;
+  aiFeedback: string;
+  rubricScores?: Record<string, { points: number; feedback: string }>;
+  createdAt: string;
+  status: "pending" | "approved" | "rejected";
+}
+
+interface GradedAssignment {
+  id: string;
+  studentName: string;
+  assignmentTitle: string;
+  classSection: string;
+  grade: number;
+  maxPoints: number;
+  feedback: string;
+  gradedAt: string;
+}
+
+// Default class sections
+const DEFAULT_CLASSES: ClassSection[] = [
+  { id: "7a", name: "7A", subject: "Math", grade: "7th", studentCount: 28, schedule: [
+    { day: "Mon", time: "8:00 AM", duration: "45 min" },
+    { day: "Wed", time: "8:00 AM", duration: "45 min" },
+    { day: "Fri", time: "8:00 AM", duration: "45 min" },
+  ]},
+  { id: "7b", name: "7B", subject: "Math", grade: "7th", studentCount: 26, schedule: [
+    { day: "Mon", time: "9:00 AM", duration: "45 min" },
+    { day: "Wed", time: "9:00 AM", duration: "45 min" },
+    { day: "Fri", time: "9:00 AM", duration: "45 min" },
+  ]},
+  { id: "7c", name: "7C", subject: "Math", grade: "7th", studentCount: 30, schedule: [
+    { day: "Mon", time: "10:00 AM", duration: "45 min" },
+    { day: "Wed", time: "10:00 AM", duration: "45 min" },
+    { day: "Fri", time: "10:00 AM", duration: "45 min" },
+  ]},
+  { id: "8a", name: "8A", subject: "Science", grade: "8th", studentCount: 25, schedule: [
+    { day: "Tue", time: "8:00 AM", duration: "45 min" },
+    { day: "Thu", time: "8:00 AM", duration: "45 min" },
+  ]},
+  { id: "8b", name: "8B", subject: "Science", grade: "8th", studentCount: 27, schedule: [
+    { day: "Tue", time: "9:00 AM", duration: "45 min" },
+    { day: "Thu", time: "9:00 AM", duration: "45 min" },
+  ]},
+];
+
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [scheduledLessons, setScheduledLessons] = useState<ScheduledLesson[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [savedLessonPlans, setSavedLessonPlans] = useState<SavedLessonPlan[]>([]);
+  const [classes, setClasses] = useState<ClassSection[]>(DEFAULT_CLASSES);
+  const [pendingGrades, setPendingGrades] = useState<PendingGrade[]>([]);
+  const [gradedAssignments, setGradedAssignments] = useState<GradedAssignment[]>([]);
 
   const addLessonToCalendar = (lesson: Omit<ScheduledLesson, "id">) => {
     const newLesson: ScheduledLesson = {
@@ -127,6 +191,51 @@ export default function Dashboard() {
     setSavedLessonPlans((prev) => prev.filter((p) => p.id !== id));
   };
 
+  const addPendingGrade = (grade: Omit<PendingGrade, "id" | "createdAt" | "status">) => {
+    const newGrade: PendingGrade = {
+      ...grade,
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      createdAt: new Date().toISOString(),
+      status: "pending",
+    };
+    setPendingGrades((prev) => [newGrade, ...prev]);
+  };
+
+  const approvePendingGrade = (id: string, finalGrade?: number, finalFeedback?: string) => {
+    const pending = pendingGrades.find(p => p.id === id);
+    if (!pending) return;
+
+    const graded: GradedAssignment = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      studentName: pending.studentName,
+      assignmentTitle: pending.assignmentTitle,
+      classSection: pending.classSection,
+      grade: finalGrade ?? pending.suggestedGrade,
+      maxPoints: pending.maxPoints,
+      feedback: finalFeedback ?? pending.aiFeedback,
+      gradedAt: new Date().toISOString(),
+    };
+
+    setGradedAssignments((prev) => [graded, ...prev]);
+    setPendingGrades((prev) => prev.filter(p => p.id !== id));
+  };
+
+  const rejectPendingGrade = (id: string) => {
+    setPendingGrades((prev) => prev.filter(p => p.id !== id));
+  };
+
+  const addClass = (classSection: Omit<ClassSection, "id">) => {
+    const newClass: ClassSection = {
+      ...classSection,
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    };
+    setClasses((prev) => [...prev, newClass]);
+  };
+
+  const removeClass = (id: string) => {
+    setClasses((prev) => prev.filter(c => c.id !== id));
+  };
+
   return (
     <div className="min-h-screen flex">
       {/* Sidebar */}
@@ -156,13 +265,13 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <main className="flex-1 p-8 overflow-auto">
-        {activeTab === "overview" && <OverviewTab assignmentCount={assignments.length} lessonCount={savedLessonPlans.length} />}
+        {activeTab === "overview" && <OverviewTab assignmentCount={assignments.length} lessonCount={savedLessonPlans.length} pendingCount={pendingGrades.length} classCount={classes.length} />}
         {activeTab === "assignments" && <AssignmentsTab assignments={assignments} onAddAssignment={addAssignment} onRemoveAssignment={removeAssignment} onAddToCalendar={addLessonToCalendar} onGoToCalendar={() => setActiveTab("calendar")} />}
-        {activeTab === "grading" && <GradingTab assignments={assignments} />}
+        {activeTab === "grading" && <GradingTab assignments={assignments} pendingGrades={pendingGrades} onAddPendingGrade={addPendingGrade} onApproveGrade={approvePendingGrade} onRejectGrade={rejectPendingGrade} />}
         {activeTab === "lessons" && <LessonsTab onAddToCalendar={addLessonToCalendar} onGoToCalendar={() => setActiveTab("calendar")} savedPlans={savedLessonPlans} onSavePlan={addLessonPlanToHistory} onRemovePlan={removeLessonPlan} />}
-        {activeTab === "calendar" && <CalendarTab scheduledLessons={scheduledLessons} setScheduledLessons={setScheduledLessons} onRemoveLesson={removeLessonFromCalendar} assignments={assignments} savedPlans={savedLessonPlans} />}
-        {activeTab === "chat" && <ChatTab />}
-        {activeTab === "analytics" && <AnalyticsTab />}
+        {activeTab === "calendar" && <CalendarTab scheduledLessons={scheduledLessons} setScheduledLessons={setScheduledLessons} onRemoveLesson={removeLessonFromCalendar} assignments={assignments} savedPlans={savedLessonPlans} classes={classes} />}
+        {activeTab === "chat" && <ChatTab onCreateAssignment={addAssignment} onCreateLessonPlan={addLessonPlanToHistory} onAddPendingGrade={addPendingGrade} classes={classes} />}
+        {activeTab === "analytics" && <AnalyticsTab classes={classes} gradedAssignments={gradedAssignments} assignments={assignments} pendingGrades={pendingGrades} />}
         {activeTab === "canvas" && <CanvasTab />}
       </main>
     </div>
@@ -185,15 +294,15 @@ function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode; labe
   );
 }
 
-function OverviewTab({ assignmentCount, lessonCount }: { assignmentCount: number; lessonCount: number }) {
+function OverviewTab({ assignmentCount, lessonCount, pendingCount, classCount }: { assignmentCount: number; lessonCount: number; pendingCount: number; classCount: number }) {
   return (
     <div>
       <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-6">Welcome back, Teacher!</h1>
       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <StatCard icon={<ClipboardList />} label="Assignments Created" value={assignmentCount.toString()} trend="Total created" />
-        <StatCard icon={<BookOpen />} label="Lessons Created" value={lessonCount.toString()} trend="Total saved" />
-        <StatCard icon={<Users />} label="Students" value="86" trend="3 classes" />
-        <StatCard icon={<TrendingUp />} label="Time Saved" value="18h" trend="This month" />
+        <StatCard icon={<ClipboardList />} label="Assignments" value={assignmentCount.toString()} trend="Total created" />
+        <StatCard icon={<BookOpen />} label="Lesson Plans" value={lessonCount.toString()} trend="Total saved" />
+        <StatCard icon={<Users />} label="Classes" value={classCount.toString()} trend="Active sections" />
+        <StatCard icon={<FileCheck />} label="Pending Grades" value={pendingCount.toString()} trend={pendingCount > 0 ? "Needs review" : "All clear"} />
       </div>
       <div className="grid lg:grid-cols-2 gap-6">
         <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
@@ -265,7 +374,15 @@ interface AIDetectionResult {
   };
 }
 
-function GradingTab({ assignments }: { assignments: Assignment[] }) {
+interface GradingTabProps {
+  assignments: Assignment[];
+  pendingGrades: PendingGrade[];
+  onAddPendingGrade: (grade: Omit<PendingGrade, "id" | "createdAt" | "status">) => void;
+  onApproveGrade: (id: string, finalGrade?: number, finalFeedback?: string) => void;
+  onRejectGrade: (id: string) => void;
+}
+
+function GradingTab({ assignments, pendingGrades, onApproveGrade, onRejectGrade }: GradingTabProps) {
   const [rubric, setRubric] = useState("");
   const [studentWork, setStudentWork] = useState("");
   const [assignmentType, setAssignmentType] = useState("");
@@ -275,6 +392,8 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
   const [isDetecting, setIsDetecting] = useState(false);
   const [aiDetection, setAiDetection] = useState<AIDetectionResult | null>(null);
   const [detectionError, setDetectionError] = useState("");
+  const [showPendingGrades, setShowPendingGrades] = useState(false);
+  const [editingGrade, setEditingGrade] = useState<{ id: string; grade: number; feedback: string } | null>(null);
 
   // Canvas state
   const [showCanvasImport, setShowCanvasImport] = useState(false);
@@ -512,14 +631,117 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Automated Grading</h1>
-        <button
-          onClick={() => { setShowCanvasImport(!showCanvasImport); if (!showCanvasImport && canvasCourses.length === 0) fetchCanvasCourses(); }}
-          className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition"
-        >
-          <ExternalLink className="h-4 w-4" />
-          {showCanvasImport ? "Hide Canvas" : "Import from Canvas"}
-        </button>
+        <div className="flex gap-3">
+          {pendingGrades.length > 0 && (
+            <button
+              onClick={() => setShowPendingGrades(!showPendingGrades)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl transition ${
+                showPendingGrades
+                  ? "bg-purple-600 text-white"
+                  : "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300"
+              }`}
+            >
+              <AlertTriangle className="h-4 w-4" />
+              Pending ({pendingGrades.length})
+            </button>
+          )}
+          <button
+            onClick={() => { setShowCanvasImport(!showCanvasImport); if (!showCanvasImport && canvasCourses.length === 0) fetchCanvasCourses(); }}
+            className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition"
+          >
+            <ExternalLink className="h-4 w-4" />
+            {showCanvasImport ? "Hide Canvas" : "Import from Canvas"}
+          </button>
+        </div>
       </div>
+
+      {/* Pending Grades Panel */}
+      {showPendingGrades && pendingGrades.length > 0 && (
+        <div className="mb-6 bg-purple-50 dark:bg-purple-900/20 rounded-2xl p-6 border border-purple-200 dark:border-purple-800">
+          <h3 className="font-semibold text-lg text-purple-800 dark:text-purple-200 mb-4 flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5" /> Pending Grade Approvals
+          </h3>
+          <div className="space-y-4 max-h-96 overflow-y-auto">
+            {pendingGrades.map((pg) => (
+              <div key={pg.id} className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-purple-200 dark:border-purple-700">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <h4 className="font-medium text-slate-900 dark:text-white">{pg.studentName}</h4>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">{pg.assignmentTitle} • {pg.classSection}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-lg font-bold text-purple-600 dark:text-purple-400">
+                      {editingGrade?.id === pg.id ? editingGrade.grade : pg.suggestedGrade}/{pg.maxPoints}
+                    </span>
+                    <p className="text-xs text-slate-500">AI Suggested</p>
+                  </div>
+                </div>
+
+                {editingGrade?.id === pg.id ? (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-sm text-slate-600 dark:text-slate-400">Adjust Grade:</label>
+                      <input
+                        type="number"
+                        value={editingGrade.grade}
+                        onChange={(e) => setEditingGrade({ ...editingGrade, grade: Number(e.target.value) })}
+                        max={pg.maxPoints}
+                        className="w-full mt-1 p-2 bg-slate-50 dark:bg-slate-700 rounded-lg border-0"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-slate-600 dark:text-slate-400">Feedback:</label>
+                      <textarea
+                        value={editingGrade.feedback}
+                        onChange={(e) => setEditingGrade({ ...editingGrade, feedback: e.target.value })}
+                        className="w-full mt-1 p-2 bg-slate-50 dark:bg-slate-700 rounded-lg border-0 h-20"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { onApproveGrade(pg.id, editingGrade.grade, editingGrade.feedback); setEditingGrade(null); }}
+                        className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700"
+                      >
+                        <CheckCircle2 className="h-4 w-4 inline mr-1" /> Approve
+                      </button>
+                      <button
+                        onClick={() => setEditingGrade(null)}
+                        className="px-4 bg-slate-200 dark:bg-slate-700 rounded-lg hover:bg-slate-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-3 line-clamp-2">{pg.aiFeedback}</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setEditingGrade({ id: pg.id, grade: pg.suggestedGrade, feedback: pg.aiFeedback })}
+                        className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 text-sm"
+                      >
+                        <Eye className="h-4 w-4 inline mr-1" /> Review & Edit
+                      </button>
+                      <button
+                        onClick={() => onApproveGrade(pg.id)}
+                        className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 text-sm"
+                      >
+                        <CheckCircle2 className="h-4 w-4 inline mr-1" /> Quick Approve
+                      </button>
+                      <button
+                        onClick={() => onRejectGrade(pg.id)}
+                        className="px-4 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 py-2 rounded-lg hover:bg-red-200 text-sm"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Canvas Import Panel */}
       {showCanvasImport && (
@@ -1673,12 +1895,42 @@ function AssignmentsTab({ assignments, onAddAssignment, onRemoveAssignment, onAd
   );
 }
 
-function ChatTab() {
+interface ChatTabProps {
+  onCreateAssignment: (assignment: Omit<Assignment, "id" | "createdAt">) => void;
+  onCreateLessonPlan: (plan: Omit<SavedLessonPlan, "id" | "createdAt">) => void;
+  onAddPendingGrade: (grade: Omit<PendingGrade, "id" | "createdAt" | "status">) => void;
+  classes: ClassSection[];
+}
+
+interface ChatMessage {
+  role: string;
+  content: string;
+  action?: {
+    type: "assignment" | "lesson" | "grade";
+    data: Assignment | SavedLessonPlan | Omit<PendingGrade, "id" | "createdAt" | "status">;
+  };
+}
+
+function ChatTab({ onCreateAssignment, onCreateLessonPlan, onAddPendingGrade, classes }: ChatTabProps) {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [messages, setMessages] = useState<{role: string; content: string}[]>([
-    { role: "assistant", content: "Hello! I'm your AI teaching assistant. How can I help you today? I can help with lesson ideas, classroom management tips, or answer any teaching-related questions." }
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { role: "assistant", content: "Hello! I'm your AI teaching assistant. I can:\n\n• **Create assignments** - Just say \"create an assignment about [topic]\"\n• **Generate lesson plans** - Say \"make a lesson plan for [topic]\"\n• **Grade student work** - Say \"grade this: [student work]\" with the rubric\n\nHow can I help you today?" }
   ]);
+
+  const detectIntent = (text: string): { type: string; topic?: string } => {
+    const lower = text.toLowerCase();
+    if (lower.includes("create") && (lower.includes("assignment") || lower.includes("quiz") || lower.includes("test"))) {
+      return { type: "assignment", topic: text.replace(/create|an?|assignment|quiz|test|about|for|on/gi, "").trim() };
+    }
+    if ((lower.includes("create") || lower.includes("make") || lower.includes("generate")) && (lower.includes("lesson") || lower.includes("plan"))) {
+      return { type: "lesson", topic: text.replace(/create|make|generate|a|lesson|plan|about|for|on/gi, "").trim() };
+    }
+    if (lower.includes("grade") && (lower.includes("this") || lower.includes("work") || lower.includes("submission"))) {
+      return { type: "grade" };
+    }
+    return { type: "chat" };
+  };
 
   const handleSend = async () => {
     if (!message.trim() || isLoading) return;
@@ -1687,27 +1939,113 @@ function ChatTab() {
     setMessages(prev => [...prev, { role: "user", content: userMessage }]);
     setIsLoading(true);
 
+    const intent = detectIntent(userMessage);
+
     try {
-      const chatHistory = messages.filter(m => m.role !== "assistant" || messages.indexOf(m) !== 0)
-        .map(m => ({ role: m.role, content: m.content }));
-      chatHistory.push({ role: "user", content: userMessage });
+      if (intent.type === "assignment" && intent.topic) {
+        // Generate assignment via AI
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: [{
+              role: "user",
+              content: `Create a detailed assignment about "${intent.topic}". Return ONLY valid JSON in this exact format (no markdown, no explanation):
+{"title":"Assignment Title","subject":"Subject","description":"Brief description","rubricCriteria":[{"name":"Criterion Name","points":25,"description":"What to look for"}],"totalPoints":100}`
+            }]
+          }),
+        });
+        const data = await response.json();
 
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: chatHistory }),
-      });
-      const data = await response.json();
+        try {
+          const jsonMatch = data.message.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const assignmentData = JSON.parse(jsonMatch[0]);
+            const rubricCriteria = (assignmentData.rubricCriteria || assignmentData.rubric || []).map((r: { name?: string; criterion?: string; points: number; description: string }) => ({
+              name: r.name || r.criterion || "Criterion",
+              points: r.points,
+              description: r.description,
+            }));
+            const newAssignment: Omit<Assignment, "id" | "createdAt"> = {
+              title: assignmentData.title || `Assignment: ${intent.topic}`,
+              subject: assignmentData.subject || "General",
+              description: assignmentData.description || "",
+              rubricCriteria,
+              totalPoints: assignmentData.totalPoints || 100,
+              dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+            };
+            setMessages(prev => [...prev, {
+              role: "assistant",
+              content: `I've created an assignment: **${newAssignment.title}**\n\n📝 Subject: ${newAssignment.subject}\n📊 Total Points: ${newAssignment.totalPoints}\n📋 Rubric: ${rubricCriteria.length} criteria\n\nClick below to add it to your assignments!`,
+              action: { type: "assignment", data: newAssignment as Assignment }
+            }]);
+          } else {
+            throw new Error("No JSON found");
+          }
+        } catch {
+          setMessages(prev => [...prev, { role: "assistant", content: `I'll help you create an assignment about "${intent.topic}". Here's a suggestion:\n\n${data.message}` }]);
+        }
+      } else if (intent.type === "lesson" && intent.topic) {
+        // Generate lesson plan
+        const response = await fetch("/api/lesson", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ topic: intent.topic, grade: "7th Grade", subject: "General" }),
+        });
+        const data = await response.json();
 
-      if (data.error) {
-        setMessages(prev => [...prev, { role: "assistant", content: `Error: ${data.error}` }]);
+        if (data.lessonPlan) {
+          const newLesson: Omit<SavedLessonPlan, "id" | "createdAt"> = {
+            topic: intent.topic,
+            grade: "7th Grade",
+            subject: "General",
+            content: data.lessonPlan,
+          };
+          setMessages(prev => [...prev, {
+            role: "assistant",
+            content: `I've created a lesson plan: **Lesson: ${newLesson.topic}**\n\n📚 Topic: ${newLesson.topic}\n🎓 Grade: ${newLesson.grade}\n\nClick below to save it!`,
+            action: { type: "lesson", data: newLesson as SavedLessonPlan }
+          }]);
+        } else {
+          setMessages(prev => [...prev, { role: "assistant", content: data.error || "Failed to generate lesson plan." }]);
+        }
       } else {
-        setMessages(prev => [...prev, { role: "assistant", content: data.message }]);
+        // Regular chat
+        const chatHistory = messages.filter(m => m.role !== "assistant" || messages.indexOf(m) !== 0)
+          .map(m => ({ role: m.role, content: m.content }));
+        chatHistory.push({ role: "user", content: userMessage });
+
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: chatHistory }),
+        });
+        const data = await response.json();
+
+        if (data.error) {
+          setMessages(prev => [...prev, { role: "assistant", content: `Error: ${data.error}` }]);
+        } else {
+          setMessages(prev => [...prev, { role: "assistant", content: data.message }]);
+        }
       }
     } catch {
       setMessages(prev => [...prev, { role: "assistant", content: "Sorry, I encountered an error. Please try again." }]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleAction = (msg: ChatMessage) => {
+    if (!msg.action) return;
+    if (msg.action.type === "assignment") {
+      onCreateAssignment(msg.action.data as Omit<Assignment, "id" | "createdAt">);
+      setMessages(prev => prev.map(m => m === msg ? { ...m, content: m.content + "\n\n✅ **Assignment added!**", action: undefined } : m));
+    } else if (msg.action.type === "lesson") {
+      onCreateLessonPlan(msg.action.data as Omit<SavedLessonPlan, "id" | "createdAt">);
+      setMessages(prev => prev.map(m => m === msg ? { ...m, content: m.content + "\n\n✅ **Lesson plan saved!**", action: undefined } : m));
+    } else if (msg.action.type === "grade") {
+      onAddPendingGrade(msg.action.data as Omit<PendingGrade, "id" | "createdAt" | "status">);
+      setMessages(prev => prev.map(m => m === msg ? { ...m, content: m.content + "\n\n✅ **Added to pending grades!**", action: undefined } : m));
     }
   };
 
@@ -1718,12 +2056,30 @@ function ChatTab() {
         <div className="flex-1 overflow-auto space-y-4 mb-4">
           {messages.map((msg, i) => (
             <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[80%] p-4 rounded-2xl ${
+              <div className={`max-w-[80%] rounded-2xl ${
                 msg.role === "user"
-                  ? "bg-blue-600 text-white"
+                  ? "bg-blue-600 text-white p-4"
                   : "bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white"
               }`}>
-                {msg.content}
+                <div className="p-4 whitespace-pre-wrap">{msg.content}</div>
+                {msg.action && (
+                  <div className="px-4 pb-4">
+                    <button
+                      onClick={() => handleAction(msg)}
+                      className={`w-full py-2 rounded-lg font-medium transition ${
+                        msg.action.type === "assignment"
+                          ? "bg-orange-600 hover:bg-orange-700 text-white"
+                          : msg.action.type === "lesson"
+                          ? "bg-blue-600 hover:bg-blue-700 text-white"
+                          : "bg-purple-600 hover:bg-purple-700 text-white"
+                      }`}
+                    >
+                      {msg.action.type === "assignment" && "➕ Add Assignment"}
+                      {msg.action.type === "lesson" && "💾 Save Lesson Plan"}
+                      {msg.action.type === "grade" && "📋 Add to Pending Grades"}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -1758,34 +2114,137 @@ function ChatTab() {
   );
 }
 
-function AnalyticsTab() {
+interface AnalyticsTabProps {
+  classes: ClassSection[];
+  gradedAssignments: GradedAssignment[];
+  assignments: Assignment[];
+  pendingGrades: PendingGrade[];
+}
+
+function AnalyticsTab({ classes, gradedAssignments, assignments, pendingGrades }: AnalyticsTabProps) {
+  // Calculate real statistics
+  const totalStudents = classes.reduce((sum, c) => sum + c.studentCount, 0);
+  const avgGrade = gradedAssignments.length > 0
+    ? Math.round(gradedAssignments.reduce((sum, g) => sum + (g.grade / g.maxPoints) * 100, 0) / gradedAssignments.length)
+    : 0;
+  const completionRate = assignments.length > 0
+    ? Math.round((gradedAssignments.length / (assignments.length * totalStudents || 1)) * 100)
+    : 0;
+
+  // Group grades by class
+  const gradesByClass = classes.map(c => {
+    const classGrades = gradedAssignments.filter(g => g.classSection === c.name);
+    const avg = classGrades.length > 0
+      ? Math.round(classGrades.reduce((sum, g) => sum + (g.grade / g.maxPoints) * 100, 0) / classGrades.length)
+      : 0;
+    return { name: c.name, subject: c.subject, avg, count: classGrades.length };
+  });
+
+  // Group by subject
+  const subjects = [...new Set(classes.map(c => c.subject))];
+  const gradesBySubject = subjects.map(subject => {
+    const subjectGrades = gradedAssignments.filter(g => {
+      const cls = classes.find(c => c.name === g.classSection);
+      return cls?.subject === subject;
+    });
+    const avg = subjectGrades.length > 0
+      ? Math.round(subjectGrades.reduce((sum, g) => sum + (g.grade / g.maxPoints) * 100, 0) / subjectGrades.length)
+      : 0;
+    return { subject, avg };
+  });
+
   return (
     <div>
       <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-6">Class Analytics</h1>
-      <div className="grid lg:grid-cols-3 gap-6 mb-6">
-        <AnalyticsCard label="Class Average" value="84%" change="+3%" />
-        <AnalyticsCard label="Completion Rate" value="92%" change="+5%" />
-        <AnalyticsCard label="Improvement" value="12%" change="+2%" />
+
+      {/* Summary Cards */}
+      <div className="grid lg:grid-cols-4 gap-6 mb-6">
+        <AnalyticsCard label="Total Students" value={totalStudents.toString()} change={`${classes.length} classes`} />
+        <AnalyticsCard label="Class Average" value={`${avgGrade}%`} change={gradedAssignments.length > 0 ? "Based on grades" : "No grades yet"} />
+        <AnalyticsCard label="Assignments" value={assignments.length.toString()} change={`${pendingGrades.length} pending`} />
+        <AnalyticsCard label="Graded" value={gradedAssignments.length.toString()} change="Total submissions" />
       </div>
-      <div className="grid lg:grid-cols-2 gap-6">
+
+      <div className="grid lg:grid-cols-2 gap-6 mb-6">
+        {/* Performance by Class */}
+        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
+          <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Performance by Class</h3>
+          {gradesByClass.length > 0 ? (
+            <div className="space-y-4">
+              {gradesByClass.map(c => (
+                <div key={c.name}>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-slate-700 dark:text-slate-300">{c.name} - {c.subject}</span>
+                    <span className="text-slate-900 dark:text-white font-medium">{c.avg}% ({c.count} graded)</span>
+                  </div>
+                  <div className="h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${c.avg >= 80 ? "bg-green-500" : c.avg >= 60 ? "bg-yellow-500" : "bg-red-500"}`}
+                      style={{ width: `${c.avg}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-slate-500 dark:text-slate-400">No grades recorded yet. Start grading to see analytics!</p>
+          )}
+        </div>
+
+        {/* Performance by Subject */}
         <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
           <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Performance by Subject</h3>
-          <div className="space-y-4">
-            <ProgressBar label="Mathematics" value={87} />
-            <ProgressBar label="Science" value={79} />
-            <ProgressBar label="English" value={91} />
-            <ProgressBar label="History" value={83} />
-          </div>
+          {gradesBySubject.length > 0 ? (
+            <div className="space-y-4">
+              {gradesBySubject.map(s => (
+                <ProgressBar key={s.subject} label={s.subject} value={s.avg} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-slate-500 dark:text-slate-400">No subject data available yet.</p>
+          )}
         </div>
-        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
-          <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Areas for Improvement</h3>
-          <div className="space-y-3">
-            <ImprovementItem area="Word Problems" students={12} />
-            <ImprovementItem area="Essay Writing" students={8} />
-            <ImprovementItem area="Lab Reports" students={6} />
-            <ImprovementItem area="Critical Analysis" students={5} />
+      </div>
+
+      {/* Recent Grades */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
+        <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Recent Grades</h3>
+        {gradedAssignments.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="text-left text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                  <th className="pb-3 font-medium">Student</th>
+                  <th className="pb-3 font-medium">Assignment</th>
+                  <th className="pb-3 font-medium">Class</th>
+                  <th className="pb-3 font-medium">Grade</th>
+                  <th className="pb-3 font-medium">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                {gradedAssignments.slice(0, 10).map(g => (
+                  <tr key={g.id} className="text-slate-700 dark:text-slate-300">
+                    <td className="py-3">{g.studentName}</td>
+                    <td className="py-3">{g.assignmentTitle}</td>
+                    <td className="py-3">{g.classSection}</td>
+                    <td className="py-3">
+                      <span className={`px-2 py-1 rounded-full text-sm ${
+                        (g.grade / g.maxPoints) >= 0.8 ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300" :
+                        (g.grade / g.maxPoints) >= 0.6 ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300" :
+                        "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
+                      }`}>
+                        {g.grade}/{g.maxPoints}
+                      </span>
+                    </td>
+                    <td className="py-3 text-sm">{new Date(g.gradedAt).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
+        ) : (
+          <p className="text-slate-500 dark:text-slate-400">No grades recorded yet. Approve pending grades to see them here!</p>
+        )}
       </div>
     </div>
   );
@@ -1834,12 +2293,13 @@ interface CalendarTabProps {
   onRemoveLesson: (id: string) => void;
   assignments: Assignment[];
   savedPlans: SavedLessonPlan[];
+  classes: ClassSection[];
 }
 
-function CalendarTab({ scheduledLessons, setScheduledLessons, onRemoveLesson, assignments, savedPlans }: CalendarTabProps) {
+function CalendarTab({ scheduledLessons, setScheduledLessons, onRemoveLesson, assignments, savedPlans, classes }: CalendarTabProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showAutoSchedule, setShowAutoSchedule] = useState(false);
-  const [autoScheduleForm, setAutoScheduleForm] = useState({ topic: "", subject: "Math", grade: "5th Grade", lessonsPerWeek: "3" });
+  const [autoScheduleForm, setAutoScheduleForm] = useState({ topic: "", subject: "Math", grade: "5th Grade", lessonsPerWeek: "3", classSection: "" });
   const [isScheduling, setIsScheduling] = useState(false);
   const [viewingItem, setViewingItem] = useState<ScheduledLesson | null>(null);
 
@@ -1882,25 +2342,44 @@ function CalendarTab({ scheduledLessons, setScheduledLessons, onRemoveLesson, as
       if (!response.ok) throw new Error("Failed to generate lesson");
 
       const lessonsPerWeek = parseInt(autoScheduleForm.lessonsPerWeek);
-      const availableDays = [1, 2, 3, 4, 5]; // Mon-Fri
-      const selectedDays = availableDays.slice(0, lessonsPerWeek);
+      const selectedClass = classes.find(c => c.id === autoScheduleForm.classSection);
 
-      const newLessons: ScheduledLesson[] = selectedDays.map((dayOffset, index) => {
+      // Use class schedule if selected, otherwise use default days
+      const dayMap: Record<string, number> = { "Sun": 0, "Mon": 1, "Tue": 2, "Wed": 3, "Thu": 4, "Fri": 5, "Sat": 6 };
+
+      let scheduledSlots: { dayOffset: number; time: string }[] = [];
+
+      if (selectedClass && selectedClass.schedule.length > 0) {
+        // Use the class's actual schedule
+        scheduledSlots = selectedClass.schedule.slice(0, lessonsPerWeek).map(s => ({
+          dayOffset: dayMap[s.day] || 1,
+          time: s.time,
+        }));
+      } else {
+        // Fallback to default Mon-Fri schedule
+        const availableDays = [1, 2, 3, 4, 5];
+        scheduledSlots = availableDays.slice(0, lessonsPerWeek).map((day, i) => ({
+          dayOffset: day,
+          time: timeSlots[i % timeSlots.length],
+        }));
+      }
+
+      const newLessons: ScheduledLesson[] = scheduledSlots.map((slot, index) => {
         const lessonDate = new Date(weekDates[0]);
-        lessonDate.setDate(weekDates[0].getDate() + dayOffset);
+        lessonDate.setDate(weekDates[0].getDate() + slot.dayOffset);
         return {
           id: `${Date.now()}-${index}`,
-          title: `${autoScheduleForm.topic} - Part ${index + 1}`,
+          title: `${autoScheduleForm.topic} - Part ${index + 1}${selectedClass ? ` (${selectedClass.name})` : ""}`,
           subject: autoScheduleForm.subject,
           date: formatDate(lessonDate),
-          time: timeSlots[index % timeSlots.length],
-          duration: "45 min",
+          time: slot.time,
+          duration: selectedClass?.schedule[0]?.duration || "45 min",
         };
       });
 
       setScheduledLessons((prev) => [...prev, ...newLessons]);
       setShowAutoSchedule(false);
-      setAutoScheduleForm({ topic: "", subject: "Math", grade: "5th Grade", lessonsPerWeek: "3" });
+      setAutoScheduleForm({ topic: "", subject: "Math", grade: "5th Grade", lessonsPerWeek: "3", classSection: "" });
     } catch (error) {
       console.error("Auto-schedule error:", error);
     } finally {
@@ -1990,19 +2469,39 @@ function CalendarTab({ scheduledLessons, setScheduledLessons, onRemoveLesson, as
                   </select>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Lessons per Week</label>
-                <select
-                  value={autoScheduleForm.lessonsPerWeek}
-                  onChange={(e) => setAutoScheduleForm({ ...autoScheduleForm, lessonsPerWeek: e.target.value })}
-                  className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
-                >
-                  <option value="2">2 lessons</option>
-                  <option value="3">3 lessons</option>
-                  <option value="4">4 lessons</option>
-                  <option value="5">5 lessons</option>
-                </select>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Class Section</label>
+                  <select
+                    value={autoScheduleForm.classSection}
+                    onChange={(e) => setAutoScheduleForm({ ...autoScheduleForm, classSection: e.target.value })}
+                    className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                  >
+                    <option value="">-- No class (manual times) --</option>
+                    {classes.map(c => (
+                      <option key={c.id} value={c.id}>{c.name} - {c.subject} ({c.schedule.map(s => s.day).join(", ")})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Lessons per Week</label>
+                  <select
+                    value={autoScheduleForm.lessonsPerWeek}
+                    onChange={(e) => setAutoScheduleForm({ ...autoScheduleForm, lessonsPerWeek: e.target.value })}
+                    className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                  >
+                    <option value="2">2 lessons</option>
+                    <option value="3">3 lessons</option>
+                    <option value="4">4 lessons</option>
+                    <option value="5">5 lessons</option>
+                  </select>
+                </div>
               </div>
+              {autoScheduleForm.classSection && (
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl text-sm text-blue-700 dark:text-blue-300">
+                  <strong>Class Schedule:</strong> {classes.find(c => c.id === autoScheduleForm.classSection)?.schedule.map(s => `${s.day} ${s.time}`).join(" • ")}
+                </div>
+              )}
               <button
                 onClick={autoScheduleLessons}
                 disabled={!autoScheduleForm.topic || isScheduling}
