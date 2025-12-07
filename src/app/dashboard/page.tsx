@@ -267,6 +267,113 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
   const [studentWork, setStudentWork] = useState("");
   const [assignmentType, setAssignmentType] = useState("");
   const [selectedAssignment, setSelectedAssignment] = useState<string>("");
+  const [feedback, setFeedback] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [aiDetection, setAiDetection] = useState<AIDetectionResult | null>(null);
+  const [detectionError, setDetectionError] = useState("");
+
+  // Canvas state
+  const [showCanvasImport, setShowCanvasImport] = useState(false);
+  const [canvasCourses, setCanvasCourses] = useState<CanvasCourse[]>([]);
+  const [canvasAssignments, setCanvasAssignments] = useState<CanvasAssignment[]>([]);
+  const [canvasSubmissions, setCanvasSubmissions] = useState<CanvasSubmission[]>([]);
+  const [selectedCanvasCourse, setSelectedCanvasCourse] = useState<CanvasCourse | null>(null);
+  const [selectedCanvasAssignment, setSelectedCanvasAssignment] = useState<CanvasAssignment | null>(null);
+  const [selectedCanvasSubmission, setSelectedCanvasSubmission] = useState<CanvasSubmission | null>(null);
+  const [canvasLoading, setCanvasLoading] = useState(false);
+  const [gradeToPost, setGradeToPost] = useState("");
+  const [isPostingGrade, setIsPostingGrade] = useState(false);
+  const [postSuccess, setPostSuccess] = useState(false);
+
+  // Fetch Canvas courses
+  const fetchCanvasCourses = async () => {
+    setCanvasLoading(true);
+    try {
+      const res = await fetch("/api/canvas?action=courses");
+      const data = await res.json();
+      if (!data.error) setCanvasCourses(data.courses || []);
+    } catch (e) { console.error(e); }
+    finally { setCanvasLoading(false); }
+  };
+
+  // Fetch Canvas assignments for a course
+  const fetchCanvasAssignments = async (courseId: number) => {
+    setCanvasLoading(true);
+    setCanvasAssignments([]);
+    setCanvasSubmissions([]);
+    try {
+      const res = await fetch(`/api/canvas?action=assignments&courseId=${courseId}`);
+      const data = await res.json();
+      if (!data.error) setCanvasAssignments(data.assignments || []);
+    } catch (e) { console.error(e); }
+    finally { setCanvasLoading(false); }
+  };
+
+  // Fetch submissions for an assignment
+  const fetchCanvasSubmissions = async (courseId: number, assignmentId: number) => {
+    setCanvasLoading(true);
+    setCanvasSubmissions([]);
+    try {
+      const res = await fetch(`/api/canvas?action=submissions&courseId=${courseId}&assignmentId=${assignmentId}`);
+      const data = await res.json();
+      if (!data.error) setCanvasSubmissions(data.submissions || []);
+    } catch (e) { console.error(e); }
+    finally { setCanvasLoading(false); }
+  };
+
+  // Post grade to Canvas
+  const postGradeToCanvas = async () => {
+    if (!selectedCanvasCourse || !selectedCanvasAssignment || !selectedCanvasSubmission || !gradeToPost) return;
+    setIsPostingGrade(true);
+    setPostSuccess(false);
+    try {
+      const res = await fetch("/api/canvas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "postGrade",
+          courseId: selectedCanvasCourse.id,
+          assignmentId: selectedCanvasAssignment.id,
+          studentId: selectedCanvasSubmission.user_id,
+          grade: gradeToPost,
+          comment: feedback,
+        }),
+      });
+      const data = await res.json();
+      if (!data.error) {
+        setPostSuccess(true);
+        // Refresh submissions
+        fetchCanvasSubmissions(selectedCanvasCourse.id, selectedCanvasAssignment.id);
+      }
+    } catch (e) { console.error(e); }
+    finally { setIsPostingGrade(false); }
+  };
+
+  // Load a Canvas submission into the grading form
+  const loadCanvasSubmission = (sub: CanvasSubmission) => {
+    setSelectedCanvasSubmission(sub);
+    // Strip HTML tags for plain text
+    const plainText = sub.body ? sub.body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() : "";
+    setStudentWork(plainText);
+    setGradeToPost(sub.score?.toString() || "");
+    setFeedback("");
+    setAiDetection(null);
+    setPostSuccess(false);
+
+    // Set rubric from Canvas assignment if available
+    if (selectedCanvasAssignment) {
+      setAssignmentType(selectedCanvasAssignment.name);
+      if (selectedCanvasAssignment.rubric) {
+        const rubricText = selectedCanvasAssignment.rubric.map(r =>
+          `${r.description} (${r.points} pts)`
+        ).join("\n");
+        setRubric(rubricText);
+      } else {
+        setRubric(`Total Points: ${selectedCanvasAssignment.points_possible}`);
+      }
+    }
+  };
 
   // When an assignment is selected, auto-fill the rubric
   const handleAssignmentSelect = (assignmentId: string) => {
@@ -280,11 +387,6 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
       setAssignmentType(assignment.subject);
     }
   };
-  const [feedback, setFeedback] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [isDetecting, setIsDetecting] = useState(false);
-  const [aiDetection, setAiDetection] = useState<AIDetectionResult | null>(null);
-  const [detectionError, setDetectionError] = useState("");
 
   const handleGrade = async () => {
     if (!rubric || !studentWork) return;
@@ -356,13 +458,99 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-6">Automated Grading</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Automated Grading</h1>
+        <button
+          onClick={() => { setShowCanvasImport(!showCanvasImport); if (!showCanvasImport && canvasCourses.length === 0) fetchCanvasCourses(); }}
+          className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition"
+        >
+          <ExternalLink className="h-4 w-4" />
+          {showCanvasImport ? "Hide Canvas" : "Import from Canvas"}
+        </button>
+      </div>
+
+      {/* Canvas Import Panel */}
+      {showCanvasImport && (
+        <div className="mb-6 bg-orange-50 dark:bg-orange-900/20 rounded-2xl p-6 border border-orange-200 dark:border-orange-800">
+          <h3 className="font-semibold text-lg text-orange-800 dark:text-orange-200 mb-4 flex items-center gap-2">
+            <ExternalLink className="h-5 w-5" /> Canvas LMS - Import Submission
+          </h3>
+          <div className="grid md:grid-cols-3 gap-4">
+            {/* Course Selector */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">1. Select Course</label>
+              <select
+                value={selectedCanvasCourse?.id || ""}
+                onChange={(e) => {
+                  const course = canvasCourses.find(c => c.id === Number(e.target.value));
+                  setSelectedCanvasCourse(course || null);
+                  setSelectedCanvasAssignment(null);
+                  setCanvasSubmissions([]);
+                  if (course) fetchCanvasAssignments(course.id);
+                }}
+                className="w-full p-3 bg-white dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-orange-500"
+              >
+                <option value="">{canvasLoading ? "Loading..." : "-- Select Course --"}</option>
+                {canvasCourses.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            {/* Assignment Selector */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">2. Select Assignment</label>
+              <select
+                value={selectedCanvasAssignment?.id || ""}
+                onChange={(e) => {
+                  const assignment = canvasAssignments.find(a => a.id === Number(e.target.value));
+                  setSelectedCanvasAssignment(assignment || null);
+                  setSelectedCanvasSubmission(null);
+                  if (assignment && selectedCanvasCourse) fetchCanvasSubmissions(selectedCanvasCourse.id, assignment.id);
+                }}
+                disabled={!selectedCanvasCourse}
+                className="w-full p-3 bg-white dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-orange-500 disabled:opacity-50"
+              >
+                <option value="">{canvasLoading ? "Loading..." : "-- Select Assignment --"}</option>
+                {canvasAssignments.map(a => (
+                  <option key={a.id} value={a.id}>{a.name} ({a.points_possible} pts)</option>
+                ))}
+              </select>
+            </div>
+            {/* Submission Selector */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">3. Select Student</label>
+              <select
+                value={selectedCanvasSubmission?.id || ""}
+                onChange={(e) => {
+                  const sub = canvasSubmissions.find(s => s.id === Number(e.target.value));
+                  if (sub) loadCanvasSubmission(sub);
+                }}
+                disabled={!selectedCanvasAssignment}
+                className="w-full p-3 bg-white dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-orange-500 disabled:opacity-50"
+              >
+                <option value="">{canvasLoading ? "Loading..." : "-- Select Student --"}</option>
+                {canvasSubmissions.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.user?.name || `Student ${s.user_id}`} {s.score !== null ? `(${s.score}/${selectedCanvasAssignment?.points_possible})` : "(ungraded)"}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {selectedCanvasSubmission && (
+            <div className="mt-4 p-3 bg-green-100 dark:bg-green-900/30 rounded-xl text-green-700 dark:text-green-300 text-sm">
+              ✓ Loaded submission from <strong>{selectedCanvasSubmission.user?.name}</strong>. Grade below then post back to Canvas!
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="grid lg:grid-cols-2 gap-6">
         <div className="space-y-6">
           <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
             <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Student Work</h3>
             {/* Assignment Selector */}
-            {assignments.length > 0 && (
+            {!selectedCanvasAssignment && assignments.length > 0 && (
               <div className="mb-4">
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Select Assignment (optional)</label>
                 <select
@@ -390,7 +578,7 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
             <textarea
               value={studentWork}
               onChange={(e) => { setStudentWork(e.target.value); setAiDetection(null); }}
-              placeholder="Paste the student's work here..."
+              placeholder="Paste the student's work here or import from Canvas..."
               className="w-full h-48 p-4 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 resize-none focus:ring-2 focus:ring-blue-500"
             />
             {/* AI Detection Button */}
@@ -452,17 +640,59 @@ function GradingTab({ assignments }: { assignments: Assignment[] }) {
             </button>
           </div>
         </div>
-        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-h-[700px] overflow-auto">
-          <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">AI Feedback</h3>
-          {feedback ? (
-            <div className="prose dark:prose-invert max-w-none text-sm">
-              <pre className="whitespace-pre-wrap font-sans text-slate-700 dark:text-slate-300">{feedback}</pre>
-            </div>
-          ) : (
-            <div className="text-center py-12 text-slate-500">
-              <FileCheck className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>Enter student work and rubric, then click Grade with AI</p>
-              <p className="text-sm mt-2">AI will provide detailed feedback and suggested grades</p>
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-h-[500px] overflow-auto">
+            <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">AI Feedback</h3>
+            {feedback ? (
+              <div className="prose dark:prose-invert max-w-none text-sm">
+                <pre className="whitespace-pre-wrap font-sans text-slate-700 dark:text-slate-300">{feedback}</pre>
+              </div>
+            ) : (
+              <div className="text-center py-12 text-slate-500">
+                <FileCheck className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Enter student work and rubric, then click Grade with AI</p>
+                <p className="text-sm mt-2">AI will provide detailed feedback and suggested grades</p>
+              </div>
+            )}
+          </div>
+
+          {/* Post to Canvas */}
+          {selectedCanvasSubmission && feedback && (
+            <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
+              <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                <Upload className="h-5 w-5" /> Post Grade to Canvas
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Grade (out of {selectedCanvasAssignment?.points_possible})
+                  </label>
+                  <input
+                    type="number"
+                    value={gradeToPost}
+                    onChange={(e) => setGradeToPost(e.target.value)}
+                    max={selectedCanvasAssignment?.points_possible}
+                    className="w-full p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter grade..."
+                  />
+                </div>
+                <button
+                  onClick={postGradeToCanvas}
+                  disabled={isPostingGrade || !gradeToPost}
+                  className="w-full bg-green-600 text-white py-3 rounded-xl font-semibold hover:bg-green-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {isPostingGrade ? (
+                    <>Posting...</>
+                  ) : (
+                    <><CheckCircle2 className="h-5 w-5" /> Post Grade & Feedback to Canvas</>
+                  )}
+                </button>
+                {postSuccess && (
+                  <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-xl text-green-700 dark:text-green-300 text-sm text-center">
+                    ✓ Grade posted successfully to Canvas!
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
