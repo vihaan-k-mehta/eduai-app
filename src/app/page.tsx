@@ -119,10 +119,10 @@ export default function Home() {
           <h2 className="text-4xl font-bold text-slate-900 dark:text-white mb-4">Meet The Team</h2>
           <p className="text-lg text-slate-600 dark:text-slate-400 mb-10">Built with ❤️ by students for educators</p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <TeamCard name="Varun Panchagnula" role="Researcher" />
-            <TeamCard name="Vihaan Nanduri" role="Didn't do anything" />
-            <TeamCard name="Vihaan Mehta" role="Developer" />
-            <TeamCard name="Samar Jadhav" role="Brainstormer" />
+            <TeamCard name="Varun Panchagnula" role="Research & Data Curator" />
+            <TeamCard name="Vihaan Nanduri" role="Pitch & Documentation Lead" />
+            <TeamCard name="Vihaan Mehta" role="AI/Engineering Lead" />
+            <TeamCard name="Samar Jadhav" role="Product & UX Designer" />
           </div>
         </div>
       </section>
@@ -193,4 +193,3 @@ function TeamCard({ name, role }: { name: string; role: string }) {
     </div>
   );
 }
-
