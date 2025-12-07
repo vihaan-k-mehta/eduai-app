@@ -3,11 +3,12 @@ import { useState } from "react";
 import {
   GraduationCap, FileCheck, BookOpen, MessageSquare, BarChart3,
   Home, Settings, Upload, Send, Sparkles, TrendingUp, Users, CheckCircle2,
-  Calendar, ChevronLeft, ChevronRight, Clock, Plus, X, AlertTriangle
+  Calendar, ChevronLeft, ChevronRight, Clock, Plus, X, AlertTriangle,
+  ClipboardList, Trash2, Eye
 } from "lucide-react";
 import Link from "next/link";
 
-type Tab = "overview" | "grading" | "lessons" | "chat" | "analytics" | "calendar";
+type Tab = "overview" | "grading" | "lessons" | "chat" | "analytics" | "calendar" | "assignments";
 
 interface ScheduledLesson {
   id: string;
@@ -18,9 +19,37 @@ interface ScheduledLesson {
   duration: string;
 }
 
+interface Assignment {
+  id: string;
+  title: string;
+  subject: string;
+  description: string;
+  dueDate: string;
+  totalPoints: number;
+  rubricCriteria: RubricCriterion[];
+  createdAt: string;
+}
+
+interface RubricCriterion {
+  name: string;
+  points: number;
+  description: string;
+}
+
+interface SavedLessonPlan {
+  id: string;
+  topic: string;
+  subject: string;
+  grade: string;
+  content: string;
+  createdAt: string;
+}
+
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [scheduledLessons, setScheduledLessons] = useState<ScheduledLesson[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [savedLessonPlans, setSavedLessonPlans] = useState<SavedLessonPlan[]>([]);
 
   const addLessonToCalendar = (lesson: Omit<ScheduledLesson, "id">) => {
     const newLesson: ScheduledLesson = {
@@ -34,6 +63,32 @@ export default function Dashboard() {
     setScheduledLessons((prev) => prev.filter((l) => l.id !== id));
   };
 
+  const addAssignment = (assignment: Omit<Assignment, "id" | "createdAt">) => {
+    const newAssignment: Assignment = {
+      ...assignment,
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      createdAt: new Date().toISOString(),
+    };
+    setAssignments((prev) => [newAssignment, ...prev]);
+  };
+
+  const removeAssignment = (id: string) => {
+    setAssignments((prev) => prev.filter((a) => a.id !== id));
+  };
+
+  const addLessonPlanToHistory = (plan: Omit<SavedLessonPlan, "id" | "createdAt">) => {
+    const newPlan: SavedLessonPlan = {
+      ...plan,
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      createdAt: new Date().toISOString(),
+    };
+    setSavedLessonPlans((prev) => [newPlan, ...prev]);
+  };
+
+  const removeLessonPlan = (id: string) => {
+    setSavedLessonPlans((prev) => prev.filter((p) => p.id !== id));
+  };
+
   return (
     <div className="min-h-screen flex">
       {/* Sidebar */}
@@ -45,6 +100,7 @@ export default function Dashboard() {
 
         <nav className="flex-1 space-y-1">
           <NavItem icon={<Home />} label="Overview" active={activeTab === "overview"} onClick={() => setActiveTab("overview")} />
+          <NavItem icon={<ClipboardList />} label="Assignments" active={activeTab === "assignments"} onClick={() => setActiveTab("assignments")} />
           <NavItem icon={<FileCheck />} label="Grading" active={activeTab === "grading"} onClick={() => setActiveTab("grading")} />
           <NavItem icon={<BookOpen />} label="Lesson Plans" active={activeTab === "lessons"} onClick={() => setActiveTab("lessons")} />
           <NavItem icon={<Calendar />} label="Calendar" active={activeTab === "calendar"} onClick={() => setActiveTab("calendar")} />
@@ -59,9 +115,10 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <main className="flex-1 p-8 overflow-auto">
-        {activeTab === "overview" && <OverviewTab />}
-        {activeTab === "grading" && <GradingTab />}
-        {activeTab === "lessons" && <LessonsTab onAddToCalendar={addLessonToCalendar} onGoToCalendar={() => setActiveTab("calendar")} />}
+        {activeTab === "overview" && <OverviewTab assignmentCount={assignments.length} lessonCount={savedLessonPlans.length} />}
+        {activeTab === "assignments" && <AssignmentsTab assignments={assignments} onAddAssignment={addAssignment} onRemoveAssignment={removeAssignment} />}
+        {activeTab === "grading" && <GradingTab assignments={assignments} />}
+        {activeTab === "lessons" && <LessonsTab onAddToCalendar={addLessonToCalendar} onGoToCalendar={() => setActiveTab("calendar")} savedPlans={savedLessonPlans} onSavePlan={addLessonPlanToHistory} onRemovePlan={removeLessonPlan} />}
         {activeTab === "calendar" && <CalendarTab scheduledLessons={scheduledLessons} setScheduledLessons={setScheduledLessons} onRemoveLesson={removeLessonFromCalendar} />}
         {activeTab === "chat" && <ChatTab />}
         {activeTab === "analytics" && <AnalyticsTab />}
@@ -86,13 +143,13 @@ function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode; labe
   );
 }
 
-function OverviewTab() {
+function OverviewTab({ assignmentCount, lessonCount }: { assignmentCount: number; lessonCount: number }) {
   return (
     <div>
       <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-6">Welcome back, Teacher!</h1>
       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <StatCard icon={<FileCheck />} label="Assignments Graded" value="147" trend="+12 this week" />
-        <StatCard icon={<BookOpen />} label="Lessons Created" value="23" trend="+3 this week" />
+        <StatCard icon={<ClipboardList />} label="Assignments Created" value={assignmentCount.toString()} trend="Total created" />
+        <StatCard icon={<BookOpen />} label="Lessons Created" value={lessonCount.toString()} trend="Total saved" />
         <StatCard icon={<Users />} label="Students" value="86" trend="3 classes" />
         <StatCard icon={<TrendingUp />} label="Time Saved" value="18h" trend="This month" />
       </div>
@@ -166,10 +223,24 @@ interface AIDetectionResult {
   };
 }
 
-function GradingTab() {
+function GradingTab({ assignments }: { assignments: Assignment[] }) {
   const [rubric, setRubric] = useState("");
   const [studentWork, setStudentWork] = useState("");
   const [assignmentType, setAssignmentType] = useState("");
+  const [selectedAssignment, setSelectedAssignment] = useState<string>("");
+
+  // When an assignment is selected, auto-fill the rubric
+  const handleAssignmentSelect = (assignmentId: string) => {
+    setSelectedAssignment(assignmentId);
+    const assignment = assignments.find(a => a.id === assignmentId);
+    if (assignment) {
+      const rubricText = assignment.rubricCriteria.map(c =>
+        `${c.name} (${c.points} pts): ${c.description}`
+      ).join("\n");
+      setRubric(rubricText);
+      setAssignmentType(assignment.subject);
+    }
+  };
   const [feedback, setFeedback] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isDetecting, setIsDetecting] = useState(false);
@@ -251,6 +322,22 @@ function GradingTab() {
         <div className="space-y-6">
           <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
             <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Student Work</h3>
+            {/* Assignment Selector */}
+            {assignments.length > 0 && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Select Assignment (optional)</label>
+                <select
+                  value={selectedAssignment}
+                  onChange={(e) => handleAssignmentSelect(e.target.value)}
+                  className="w-full p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">-- Use custom rubric --</option>
+                  {assignments.map(a => (
+                    <option key={a.id} value={a.id}>{a.title} ({a.subject})</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="mb-4">
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Assignment Type</label>
               <input
@@ -348,9 +435,12 @@ function GradingTab() {
 interface LessonsTabProps {
   onAddToCalendar: (lesson: Omit<ScheduledLesson, "id">) => void;
   onGoToCalendar: () => void;
+  savedPlans: SavedLessonPlan[];
+  onSavePlan: (plan: Omit<SavedLessonPlan, "id" | "createdAt">) => void;
+  onRemovePlan: (id: string) => void;
 }
 
-function LessonsTab({ onAddToCalendar, onGoToCalendar }: LessonsTabProps) {
+function LessonsTab({ onAddToCalendar, onGoToCalendar, savedPlans, onSavePlan, onRemovePlan }: LessonsTabProps) {
   const [topic, setTopic] = useState("");
   const [grade, setGrade] = useState("");
   const [subject, setSubject] = useState("");
@@ -360,12 +450,15 @@ function LessonsTab({ onAddToCalendar, onGoToCalendar }: LessonsTabProps) {
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("9:00 AM");
   const [addedToCalendar, setAddedToCalendar] = useState(false);
+  const [savedToHistory, setSavedToHistory] = useState(false);
+  const [viewingPlan, setViewingPlan] = useState<SavedLessonPlan | null>(null);
 
   const handleGenerate = async () => {
     if (!topic || !grade) return;
     setIsLoading(true);
     setLessonPlan("");
     setAddedToCalendar(false);
+    setSavedToHistory(false);
 
     try {
       const response = await fetch("/api/lesson", {
@@ -385,6 +478,16 @@ function LessonsTab({ onAddToCalendar, onGoToCalendar }: LessonsTabProps) {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSaveToHistory = () => {
+    onSavePlan({
+      topic,
+      subject: subject || "General",
+      grade: `${grade}th Grade`,
+      content: lessonPlan,
+    });
+    setSavedToHistory(true);
   };
 
   const handleAddToCalendar = () => {
@@ -522,40 +625,99 @@ function LessonsTab({ onAddToCalendar, onGoToCalendar }: LessonsTabProps) {
         <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-h-[600px] overflow-auto">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-lg text-slate-900 dark:text-white">
-              {lessonPlan ? "Generated Lesson Plan" : "Recent Plans"}
+              {viewingPlan ? "Viewing Saved Plan" : lessonPlan ? "Generated Lesson Plan" : "Saved Plans"}
             </h3>
-            {lessonPlan && !lessonPlan.startsWith("Error") && (
-              <div className="flex gap-2">
-                {addedToCalendar ? (
-                  <button
-                    onClick={onGoToCalendar}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg text-sm font-medium hover:bg-green-200 dark:hover:bg-green-900/50 transition"
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    View Calendar
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleAddToCalendar}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add to Calendar
-                  </button>
-                )}
-              </div>
-            )}
+            <div className="flex gap-2">
+              {viewingPlan && (
+                <button
+                  onClick={() => setViewingPlan(null)}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-300 dark:hover:bg-slate-600 transition"
+                >
+                  <X className="h-4 w-4" />
+                  Close
+                </button>
+              )}
+              {lessonPlan && !lessonPlan.startsWith("Error") && !viewingPlan && (
+                <>
+                  {savedToHistory ? (
+                    <span className="flex items-center gap-1 px-3 py-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg text-sm font-medium">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Saved
+                    </span>
+                  ) : (
+                    <button
+                      onClick={handleSaveToHistory}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Save
+                    </button>
+                  )}
+                  {addedToCalendar ? (
+                    <button
+                      onClick={onGoToCalendar}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg text-sm font-medium hover:bg-green-200 dark:hover:bg-green-900/50 transition"
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      Calendar
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleAddToCalendar}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition"
+                    >
+                      <Calendar className="h-4 w-4" />
+                      Schedule
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
-          {lessonPlan ? (
+          {viewingPlan ? (
+            <div>
+              <div className="mb-3 p-3 bg-slate-100 dark:bg-slate-700 rounded-xl">
+                <p className="font-medium text-slate-900 dark:text-white">{viewingPlan.topic}</p>
+                <p className="text-sm text-slate-500">{viewingPlan.subject} • {viewingPlan.grade}</p>
+              </div>
+              <div className="prose dark:prose-invert max-w-none text-sm">
+                <pre className="whitespace-pre-wrap font-sans text-slate-700 dark:text-slate-300">{viewingPlan.content}</pre>
+              </div>
+            </div>
+          ) : lessonPlan ? (
             <div className="prose dark:prose-invert max-w-none text-sm">
               <pre className="whitespace-pre-wrap font-sans text-slate-700 dark:text-slate-300">{lessonPlan}</pre>
             </div>
-          ) : (
+          ) : savedPlans.length > 0 ? (
             <div className="space-y-3">
-              <LessonItem title="Quadratic Equations" subject="Algebra" date="Dec 5" />
-              <LessonItem title="American Revolution" subject="History" date="Dec 4" />
-              <LessonItem title="Cell Division" subject="Biology" date="Dec 3" />
-              <LessonItem title="Essay Structure" subject="English" date="Dec 2" />
+              {savedPlans.map((plan) => (
+                <div key={plan.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700 rounded-xl">
+                  <div className="flex-1 cursor-pointer" onClick={() => setViewingPlan(plan)}>
+                    <p className="font-medium text-slate-900 dark:text-white">{plan.topic}</p>
+                    <p className="text-sm text-slate-500">{plan.subject} • {plan.grade}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setViewingPlan(plan)}
+                      className="p-2 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => onRemovePlan(plan.id)}
+                      className="p-2 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-slate-500">
+              <BookOpen className="h-12 w-12 mx-auto mb-3 opacity-50" />
+              <p>No saved lesson plans yet</p>
+              <p className="text-sm">Generate a lesson plan and save it to see it here</p>
             </div>
           )}
         </div>
@@ -564,14 +726,278 @@ function LessonsTab({ onAddToCalendar, onGoToCalendar }: LessonsTabProps) {
   );
 }
 
-function LessonItem({ title, subject, date }: { title: string; subject: string; date: string }) {
+interface AssignmentsTabProps {
+  assignments: Assignment[];
+  onAddAssignment: (assignment: Omit<Assignment, "id" | "createdAt">) => void;
+  onRemoveAssignment: (id: string) => void;
+}
+
+function AssignmentsTab({ assignments, onAddAssignment, onRemoveAssignment }: AssignmentsTabProps) {
+  const [title, setTitle] = useState("");
+  const [subject, setSubject] = useState("");
+  const [description, setDescription] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [rubricCriteria, setRubricCriteria] = useState<RubricCriterion[]>([
+    { name: "", points: 10, description: "" }
+  ]);
+  const [viewingAssignment, setViewingAssignment] = useState<Assignment | null>(null);
+
+  const addCriterion = () => {
+    setRubricCriteria([...rubricCriteria, { name: "", points: 10, description: "" }]);
+  };
+
+  const removeCriterion = (index: number) => {
+    if (rubricCriteria.length > 1) {
+      setRubricCriteria(rubricCriteria.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateCriterion = (index: number, field: keyof RubricCriterion, value: string | number) => {
+    const updated = [...rubricCriteria];
+    updated[index] = { ...updated[index], [field]: value };
+    setRubricCriteria(updated);
+  };
+
+  const totalPoints = rubricCriteria.reduce((sum, c) => sum + c.points, 0);
+
+  const handleCreate = () => {
+    if (!title || !subject || rubricCriteria.some(c => !c.name)) return;
+
+    onAddAssignment({
+      title,
+      subject,
+      description,
+      dueDate,
+      totalPoints,
+      rubricCriteria: rubricCriteria.filter(c => c.name),
+    });
+
+    // Reset form
+    setTitle("");
+    setSubject("");
+    setDescription("");
+    setDueDate("");
+    setRubricCriteria([{ name: "", points: 10, description: "" }]);
+  };
+
   return (
-    <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700 rounded-xl">
-      <div>
-        <p className="font-medium text-slate-900 dark:text-white">{title}</p>
-        <p className="text-sm text-slate-500">{subject}</p>
+    <div>
+      <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-6">Assignment Creator</h1>
+
+      {/* View Assignment Modal */}
+      {viewingAssignment && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-2xl shadow-xl max-h-[80vh] overflow-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">{viewingAssignment.title}</h2>
+              <button onClick={() => setViewingAssignment(null)} className="text-slate-500 hover:text-slate-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div className="flex gap-4 text-sm">
+                <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full">{viewingAssignment.subject}</span>
+                <span className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full">{viewingAssignment.totalPoints} pts</span>
+                {viewingAssignment.dueDate && (
+                  <span className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 rounded-full">Due: {new Date(viewingAssignment.dueDate).toLocaleDateString()}</span>
+                )}
+              </div>
+              {viewingAssignment.description && (
+                <div>
+                  <h4 className="font-medium text-slate-700 dark:text-slate-300 mb-1">Description</h4>
+                  <p className="text-slate-600 dark:text-slate-400">{viewingAssignment.description}</p>
+                </div>
+              )}
+              <div>
+                <h4 className="font-medium text-slate-700 dark:text-slate-300 mb-2">Rubric Criteria</h4>
+                <div className="space-y-2">
+                  {viewingAssignment.rubricCriteria.map((c, i) => (
+                    <div key={i} className="p-3 bg-slate-50 dark:bg-slate-700 rounded-xl">
+                      <div className="flex justify-between items-center">
+                        <span className="font-medium text-slate-900 dark:text-white">{c.name}</span>
+                        <span className="text-blue-600 font-semibold">{c.points} pts</span>
+                      </div>
+                      {c.description && <p className="text-sm text-slate-500 mt-1">{c.description}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* Create Form */}
+        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
+          <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Create New Assignment</h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Title *</label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g., Chapter 5 Essay, Lab Report #3"
+                className="w-full p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Subject *</label>
+                <input
+                  type="text"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="e.g., Biology, Math"
+                  className="w-full p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Due Date</label>
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="w-full p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Description</label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Assignment instructions and requirements..."
+                className="w-full h-24 p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 resize-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            {/* Rubric Builder */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Rubric Criteria *</label>
+                <span className="text-sm font-semibold text-blue-600">Total: {totalPoints} pts</span>
+              </div>
+              <div className="space-y-3">
+                {rubricCriteria.map((criterion, index) => (
+                  <div key={index} className="p-3 bg-slate-50 dark:bg-slate-700 rounded-xl">
+                    <div className="flex gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={criterion.name}
+                        onChange={(e) => updateCriterion(index, "name", e.target.value)}
+                        placeholder="Criterion name (e.g., Content, Grammar)"
+                        className="flex-1 p-2 bg-white dark:bg-slate-600 rounded-lg border-0 text-sm focus:ring-2 focus:ring-blue-500"
+                      />
+                      <input
+                        type="number"
+                        value={criterion.points}
+                        onChange={(e) => updateCriterion(index, "points", parseInt(e.target.value) || 0)}
+                        className="w-20 p-2 bg-white dark:bg-slate-600 rounded-lg border-0 text-sm text-center focus:ring-2 focus:ring-blue-500"
+                        min="0"
+                      />
+                      <button
+                        onClick={() => removeCriterion(index)}
+                        disabled={rubricCriteria.length === 1}
+                        className="p-2 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg disabled:opacity-30"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      value={criterion.description}
+                      onChange={(e) => updateCriterion(index, "description", e.target.value)}
+                      placeholder="Description (optional)"
+                      className="w-full p-2 bg-white dark:bg-slate-600 rounded-lg border-0 text-sm focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={addCriterion}
+                className="mt-3 w-full py-2 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl text-slate-500 hover:border-blue-500 hover:text-blue-500 transition flex items-center justify-center gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                Add Criterion
+              </button>
+            </div>
+
+            <button
+              onClick={handleCreate}
+              disabled={!title || !subject || rubricCriteria.every(c => !c.name)}
+              className="w-full bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <ClipboardList className="h-5 w-5" />
+              Create Assignment
+            </button>
+          </div>
+        </div>
+
+        {/* Assignment History */}
+        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-h-[700px] overflow-auto">
+          <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">
+            Created Assignments ({assignments.length})
+          </h3>
+          {assignments.length > 0 ? (
+            <div className="space-y-3">
+              {assignments.map((assignment) => (
+                <div key={assignment.id} className="p-4 bg-slate-50 dark:bg-slate-700 rounded-xl">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-slate-900 dark:text-white">{assignment.title}</h4>
+                      <div className="flex items-center gap-2 mt-1 text-sm">
+                        <span className="text-slate-500">{assignment.subject}</span>
+                        <span className="text-slate-400">•</span>
+                        <span className="text-blue-600 font-medium">{assignment.totalPoints} pts</span>
+                        {assignment.dueDate && (
+                          <>
+                            <span className="text-slate-400">•</span>
+                            <span className="text-orange-600">Due {new Date(assignment.dueDate).toLocaleDateString()}</span>
+                          </>
+                        )}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {assignment.rubricCriteria.slice(0, 3).map((c, i) => (
+                          <span key={i} className="px-2 py-0.5 bg-slate-200 dark:bg-slate-600 rounded text-xs text-slate-600 dark:text-slate-300">
+                            {c.name} ({c.points})
+                          </span>
+                        ))}
+                        {assignment.rubricCriteria.length > 3 && (
+                          <span className="px-2 py-0.5 bg-slate-200 dark:bg-slate-600 rounded text-xs text-slate-600 dark:text-slate-300">
+                            +{assignment.rubricCriteria.length - 3} more
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setViewingAssignment(assignment)}
+                        className="p-2 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => onRemoveAssignment(assignment.id)}
+                        className="p-2 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-slate-500">
+              <ClipboardList className="h-12 w-12 mx-auto mb-3 opacity-50" />
+              <p>No assignments created yet</p>
+              <p className="text-sm">Create your first assignment using the form</p>
+            </div>
+          )}
+        </div>
       </div>
-      <span className="text-sm text-slate-500">{date}</span>
     </div>
   );
 }
