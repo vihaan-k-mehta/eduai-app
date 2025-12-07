@@ -1,0 +1,1017 @@
+"use client";
+import { useState } from "react";
+import {
+  GraduationCap, FileCheck, BookOpen, MessageSquare, BarChart3,
+  Home, Settings, Upload, Send, Sparkles, TrendingUp, Users, CheckCircle2,
+  Calendar, ChevronLeft, ChevronRight, Clock, Plus, X, AlertTriangle
+} from "lucide-react";
+import Link from "next/link";
+
+type Tab = "overview" | "grading" | "lessons" | "chat" | "analytics" | "calendar";
+
+interface ScheduledLesson {
+  id: string;
+  title: string;
+  subject: string;
+  date: string;
+  time: string;
+  duration: string;
+}
+
+export default function Dashboard() {
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [scheduledLessons, setScheduledLessons] = useState<ScheduledLesson[]>([]);
+
+  const addLessonToCalendar = (lesson: Omit<ScheduledLesson, "id">) => {
+    const newLesson: ScheduledLesson = {
+      ...lesson,
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    };
+    setScheduledLessons((prev) => [...prev, newLesson]);
+  };
+
+  const removeLessonFromCalendar = (id: string) => {
+    setScheduledLessons((prev) => prev.filter((l) => l.id !== id));
+  };
+
+  return (
+    <div className="min-h-screen flex">
+      {/* Sidebar */}
+      <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 p-4 flex flex-col">
+        <Link href="/" className="flex items-center gap-2 mb-8">
+          <GraduationCap className="h-8 w-8 text-blue-600" />
+          <span className="text-xl font-bold text-slate-900 dark:text-white">EduAI</span>
+        </Link>
+
+        <nav className="flex-1 space-y-1">
+          <NavItem icon={<Home />} label="Overview" active={activeTab === "overview"} onClick={() => setActiveTab("overview")} />
+          <NavItem icon={<FileCheck />} label="Grading" active={activeTab === "grading"} onClick={() => setActiveTab("grading")} />
+          <NavItem icon={<BookOpen />} label="Lesson Plans" active={activeTab === "lessons"} onClick={() => setActiveTab("lessons")} />
+          <NavItem icon={<Calendar />} label="Calendar" active={activeTab === "calendar"} onClick={() => setActiveTab("calendar")} />
+          <NavItem icon={<MessageSquare />} label="AI Assistant" active={activeTab === "chat"} onClick={() => setActiveTab("chat")} />
+          <NavItem icon={<BarChart3 />} label="Analytics" active={activeTab === "analytics"} onClick={() => setActiveTab("analytics")} />
+        </nav>
+
+        <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
+          <NavItem icon={<Settings />} label="Settings" active={false} onClick={() => {}} />
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 p-8 overflow-auto">
+        {activeTab === "overview" && <OverviewTab />}
+        {activeTab === "grading" && <GradingTab />}
+        {activeTab === "lessons" && <LessonsTab onAddToCalendar={addLessonToCalendar} onGoToCalendar={() => setActiveTab("calendar")} />}
+        {activeTab === "calendar" && <CalendarTab scheduledLessons={scheduledLessons} setScheduledLessons={setScheduledLessons} onRemoveLesson={removeLessonFromCalendar} />}
+        {activeTab === "chat" && <ChatTab />}
+        {activeTab === "analytics" && <AnalyticsTab />}
+      </main>
+    </div>
+  );
+}
+
+function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition ${
+        active 
+          ? "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400" 
+          : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+      }`}
+    >
+      <span className="h-5 w-5">{icon}</span>
+      <span className="font-medium">{label}</span>
+    </button>
+  );
+}
+
+function OverviewTab() {
+  return (
+    <div>
+      <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-6">Welcome back, Teacher!</h1>
+      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <StatCard icon={<FileCheck />} label="Assignments Graded" value="147" trend="+12 this week" />
+        <StatCard icon={<BookOpen />} label="Lessons Created" value="23" trend="+3 this week" />
+        <StatCard icon={<Users />} label="Students" value="86" trend="3 classes" />
+        <StatCard icon={<TrendingUp />} label="Time Saved" value="18h" trend="This month" />
+      </div>
+      <div className="grid lg:grid-cols-2 gap-6">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
+          <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Recent Activity</h3>
+          <div className="space-y-3">
+            <ActivityItem text="Graded 24 math assignments" time="2 hours ago" />
+            <ActivityItem text="Generated lesson plan for Chapter 5" time="Yesterday" />
+            <ActivityItem text="Class performance report generated" time="2 days ago" />
+          </div>
+        </div>
+        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
+          <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Quick Actions</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <QuickAction icon={<Upload />} label="Upload Assignment" />
+            <QuickAction icon={<BookOpen />} label="New Lesson Plan" />
+            <QuickAction icon={<MessageSquare />} label="Ask AI" />
+            <QuickAction icon={<BarChart3 />} label="View Reports" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ icon, label, value, trend }: { icon: React.ReactNode; label: string; value: string; trend: string }) {
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="h-10 w-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center text-blue-600">
+          {icon}
+        </div>
+        <span className="text-slate-600 dark:text-slate-400">{label}</span>
+      </div>
+      <div className="text-3xl font-bold text-slate-900 dark:text-white">{value}</div>
+      <div className="text-sm text-green-600">{trend}</div>
+    </div>
+  );
+}
+
+function ActivityItem({ text, time }: { text: string; time: string }) {
+  return (
+    <div className="flex items-center gap-3 py-2">
+      <CheckCircle2 className="h-5 w-5 text-green-500" />
+      <div className="flex-1">
+        <p className="text-slate-700 dark:text-slate-300">{text}</p>
+        <p className="text-sm text-slate-500">{time}</p>
+      </div>
+    </div>
+  );
+}
+
+function QuickAction({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <button className="flex flex-col items-center gap-2 p-4 bg-slate-50 dark:bg-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-600 transition">
+      <span className="text-blue-600">{icon}</span>
+      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{label}</span>
+    </button>
+  );
+}
+
+interface AIDetectionResult {
+  score: number;
+  verdict: string;
+  confidence: string;
+  details: {
+    aiSentenceCount: number;
+    totalSentences: number;
+    percentageAI: number;
+  };
+}
+
+function GradingTab() {
+  const [rubric, setRubric] = useState("");
+  const [studentWork, setStudentWork] = useState("");
+  const [assignmentType, setAssignmentType] = useState("");
+  const [feedback, setFeedback] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [aiDetection, setAiDetection] = useState<AIDetectionResult | null>(null);
+  const [detectionError, setDetectionError] = useState("");
+
+  const handleGrade = async () => {
+    if (!rubric || !studentWork) return;
+    setIsLoading(true);
+    setFeedback("");
+
+    try {
+      const response = await fetch("/api/grade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentWork, rubric, assignmentType }),
+      });
+      const data = await response.json();
+
+      if (data.error) {
+        setFeedback(`Error: ${data.error}`);
+      } else {
+        setFeedback(data.feedback);
+      }
+    } catch {
+      setFeedback("Failed to grade assignment. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDetectAI = async () => {
+    if (!studentWork || studentWork.length < 50) {
+      setDetectionError("Please enter at least 50 characters of student work to analyze.");
+      return;
+    }
+    setIsDetecting(true);
+    setAiDetection(null);
+    setDetectionError("");
+
+    try {
+      const response = await fetch("/api/detect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: studentWork }),
+      });
+      const data = await response.json();
+
+      if (data.error) {
+        setDetectionError(data.error);
+      } else {
+        setAiDetection(data);
+      }
+    } catch {
+      setDetectionError("Failed to analyze text. Please try again.");
+    } finally {
+      setIsDetecting(false);
+    }
+  };
+
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return "text-red-600 dark:text-red-400";
+    if (score >= 50) return "text-orange-600 dark:text-orange-400";
+    if (score >= 30) return "text-yellow-600 dark:text-yellow-400";
+    return "text-green-600 dark:text-green-400";
+  };
+
+  const getScoreBg = (score: number) => {
+    if (score >= 80) return "bg-red-100 dark:bg-red-900/30";
+    if (score >= 50) return "bg-orange-100 dark:bg-orange-900/30";
+    if (score >= 30) return "bg-yellow-100 dark:bg-yellow-900/30";
+    return "bg-green-100 dark:bg-green-900/30";
+  };
+
+  return (
+    <div>
+      <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-6">Automated Grading</h1>
+      <div className="grid lg:grid-cols-2 gap-6">
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
+            <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Student Work</h3>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Assignment Type</label>
+              <input
+                type="text"
+                value={assignmentType}
+                onChange={(e) => setAssignmentType(e.target.value)}
+                placeholder="e.g., Essay, Short Answer, Lab Report"
+                className="w-full p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <textarea
+              value={studentWork}
+              onChange={(e) => { setStudentWork(e.target.value); setAiDetection(null); }}
+              placeholder="Paste the student's work here..."
+              className="w-full h-48 p-4 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 resize-none focus:ring-2 focus:ring-blue-500"
+            />
+            {/* AI Detection Button */}
+            <button
+              onClick={handleDetectAI}
+              disabled={isDetecting || !studentWork}
+              className="mt-3 w-full bg-purple-600 text-white py-2.5 rounded-xl font-semibold hover:bg-purple-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isDetecting ? (
+                <>Analyzing...</>
+              ) : (
+                <><AlertTriangle className="h-4 w-4" /> Detect AI-Generated Content</>
+              )}
+            </button>
+            {/* AI Detection Results */}
+            {detectionError && (
+              <div className="mt-3 p-3 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-xl text-sm">
+                {detectionError}
+              </div>
+            )}
+            {aiDetection && (
+              <div className={`mt-3 p-4 rounded-xl ${getScoreBg(aiDetection.score)}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-semibold text-slate-900 dark:text-white">AI Detection Result</span>
+                  <span className={`text-2xl font-bold ${getScoreColor(aiDetection.score)}`}>
+                    {aiDetection.score}%
+                  </span>
+                </div>
+                <div className={`text-lg font-medium ${getScoreColor(aiDetection.score)}`}>
+                  {aiDetection.verdict}
+                </div>
+                <div className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                  <span className="font-medium">Confidence:</span> {aiDetection.confidence}
+                </div>
+                <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                  <span className="font-medium">{aiDetection.details.aiSentenceCount}</span> of {aiDetection.details.totalSentences} sentences flagged ({aiDetection.details.percentageAI}%)
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
+            <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Grading Rubric</h3>
+            <textarea
+              value={rubric}
+              onChange={(e) => setRubric(e.target.value)}
+              placeholder="Enter your grading rubric here...&#10;&#10;Example:&#10;- Content accuracy (40%)&#10;- Grammar & spelling (20%)&#10;- Organization (20%)&#10;- Creativity (20%)"
+              className="w-full h-32 p-4 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 resize-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              onClick={handleGrade}
+              disabled={isLoading || !rubric || !studentWork}
+              className="mt-4 w-full bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isLoading ? (
+                <>Grading...</>
+              ) : (
+                <><Sparkles className="h-5 w-5" /> Grade with AI</>
+              )}
+            </button>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-h-[700px] overflow-auto">
+          <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">AI Feedback</h3>
+          {feedback ? (
+            <div className="prose dark:prose-invert max-w-none text-sm">
+              <pre className="whitespace-pre-wrap font-sans text-slate-700 dark:text-slate-300">{feedback}</pre>
+            </div>
+          ) : (
+            <div className="text-center py-12 text-slate-500">
+              <FileCheck className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>Enter student work and rubric, then click Grade with AI</p>
+              <p className="text-sm mt-2">AI will provide detailed feedback and suggested grades</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface LessonsTabProps {
+  onAddToCalendar: (lesson: Omit<ScheduledLesson, "id">) => void;
+  onGoToCalendar: () => void;
+}
+
+function LessonsTab({ onAddToCalendar, onGoToCalendar }: LessonsTabProps) {
+  const [topic, setTopic] = useState("");
+  const [grade, setGrade] = useState("");
+  const [subject, setSubject] = useState("");
+  const [lessonPlan, setLessonPlan] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("9:00 AM");
+  const [addedToCalendar, setAddedToCalendar] = useState(false);
+
+  const handleGenerate = async () => {
+    if (!topic || !grade) return;
+    setIsLoading(true);
+    setLessonPlan("");
+    setAddedToCalendar(false);
+
+    try {
+      const response = await fetch("/api/lesson", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic, grade: `${grade}th Grade`, subject }),
+      });
+      const data = await response.json();
+
+      if (data.error) {
+        setLessonPlan(`Error: ${data.error}`);
+      } else {
+        setLessonPlan(data.lessonPlan);
+      }
+    } catch {
+      setLessonPlan("Failed to generate lesson plan. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAddToCalendar = () => {
+    const today = new Date();
+    setScheduleDate(today.toISOString().split("T")[0]);
+    setShowScheduleModal(true);
+  };
+
+  const confirmAddToCalendar = () => {
+    onAddToCalendar({
+      title: topic,
+      subject: subject || "General",
+      date: scheduleDate,
+      time: scheduleTime,
+      duration: "45 min",
+    });
+    setShowScheduleModal(false);
+    setAddedToCalendar(true);
+  };
+
+  return (
+    <div>
+      <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-6">Lesson Plan Generator</h1>
+
+      {/* Schedule Modal */}
+      {showScheduleModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-md shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Schedule Lesson</h2>
+              <button onClick={() => setShowScheduleModal(false)} className="text-slate-500 hover:text-slate-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Lesson</label>
+                <div className="p-3 bg-slate-100 dark:bg-slate-700 rounded-xl text-slate-900 dark:text-white font-medium">
+                  {topic}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Date</label>
+                <input
+                  type="date"
+                  value={scheduleDate}
+                  onChange={(e) => setScheduleDate(e.target.value)}
+                  className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Time</label>
+                <select
+                  value={scheduleTime}
+                  onChange={(e) => setScheduleTime(e.target.value)}
+                  className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                >
+                  <option>8:00 AM</option>
+                  <option>9:00 AM</option>
+                  <option>10:00 AM</option>
+                  <option>11:00 AM</option>
+                  <option>12:00 PM</option>
+                  <option>1:00 PM</option>
+                  <option>2:00 PM</option>
+                  <option>3:00 PM</option>
+                </select>
+              </div>
+              <button
+                onClick={confirmAddToCalendar}
+                disabled={!scheduleDate}
+                className="w-full py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <Calendar className="h-5 w-5" />
+                Add to Calendar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
+          <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Generate New Plan</h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Topic</label>
+              <input
+                type="text"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="e.g., Photosynthesis, Quadratic Equations"
+                className="w-full p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Subject</label>
+              <input
+                type="text"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                placeholder="e.g., Biology, Math, History"
+                className="w-full p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Grade Level</label>
+              <select
+                value={grade}
+                onChange={(e) => setGrade(e.target.value)}
+                className="w-full p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select grade</option>
+                <option value="6">6th Grade</option>
+                <option value="7">7th Grade</option>
+                <option value="8">8th Grade</option>
+                <option value="9">9th Grade</option>
+                <option value="10">10th Grade</option>
+                <option value="11">11th Grade</option>
+                <option value="12">12th Grade</option>
+              </select>
+            </div>
+            <button
+              onClick={handleGenerate}
+              disabled={isLoading || !topic || !grade}
+              className="w-full bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isLoading ? (
+                <>Generating...</>
+              ) : (
+                <><Sparkles className="h-5 w-5" /> Generate Lesson Plan</>
+              )}
+            </button>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-h-[600px] overflow-auto">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-lg text-slate-900 dark:text-white">
+              {lessonPlan ? "Generated Lesson Plan" : "Recent Plans"}
+            </h3>
+            {lessonPlan && !lessonPlan.startsWith("Error") && (
+              <div className="flex gap-2">
+                {addedToCalendar ? (
+                  <button
+                    onClick={onGoToCalendar}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg text-sm font-medium hover:bg-green-200 dark:hover:bg-green-900/50 transition"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    View Calendar
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleAddToCalendar}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add to Calendar
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          {lessonPlan ? (
+            <div className="prose dark:prose-invert max-w-none text-sm">
+              <pre className="whitespace-pre-wrap font-sans text-slate-700 dark:text-slate-300">{lessonPlan}</pre>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <LessonItem title="Quadratic Equations" subject="Algebra" date="Dec 5" />
+              <LessonItem title="American Revolution" subject="History" date="Dec 4" />
+              <LessonItem title="Cell Division" subject="Biology" date="Dec 3" />
+              <LessonItem title="Essay Structure" subject="English" date="Dec 2" />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LessonItem({ title, subject, date }: { title: string; subject: string; date: string }) {
+  return (
+    <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700 rounded-xl">
+      <div>
+        <p className="font-medium text-slate-900 dark:text-white">{title}</p>
+        <p className="text-sm text-slate-500">{subject}</p>
+      </div>
+      <span className="text-sm text-slate-500">{date}</span>
+    </div>
+  );
+}
+
+function ChatTab() {
+  const [message, setMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [messages, setMessages] = useState<{role: string; content: string}[]>([
+    { role: "assistant", content: "Hello! I'm your AI teaching assistant. How can I help you today? I can help with lesson ideas, classroom management tips, or answer any teaching-related questions." }
+  ]);
+
+  const handleSend = async () => {
+    if (!message.trim() || isLoading) return;
+    const userMessage = message;
+    setMessage("");
+    setMessages(prev => [...prev, { role: "user", content: userMessage }]);
+    setIsLoading(true);
+
+    try {
+      const chatHistory = messages.filter(m => m.role !== "assistant" || messages.indexOf(m) !== 0)
+        .map(m => ({ role: m.role, content: m.content }));
+      chatHistory.push({ role: "user", content: userMessage });
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: chatHistory }),
+      });
+      const data = await response.json();
+
+      if (data.error) {
+        setMessages(prev => [...prev, { role: "assistant", content: `Error: ${data.error}` }]);
+      } else {
+        setMessages(prev => [...prev, { role: "assistant", content: data.message }]);
+      }
+    } catch {
+      setMessages(prev => [...prev, { role: "assistant", content: "Sorry, I encountered an error. Please try again." }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="h-[calc(100vh-8rem)] flex flex-col">
+      <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-6">AI Teaching Assistant</h1>
+      <div className="flex-1 bg-white dark:bg-slate-800 rounded-2xl p-6 flex flex-col">
+        <div className="flex-1 overflow-auto space-y-4 mb-4">
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[80%] p-4 rounded-2xl ${
+                msg.role === "user"
+                  ? "bg-blue-600 text-white"
+                  : "bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white"
+              }`}>
+                {msg.content}
+              </div>
+            </div>
+          ))}
+          {isLoading && (
+            <div className="flex justify-start">
+              <div className="bg-slate-100 dark:bg-slate-700 p-4 rounded-2xl">
+                <div className="flex gap-1">
+                  <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: "0ms"}}></div>
+                  <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: "150ms"}}></div>
+                  <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{animationDelay: "300ms"}}></div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-3">
+          <input
+            type="text"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSend()}
+            placeholder="Ask anything about teaching..."
+            className="flex-1 p-4 bg-slate-50 dark:bg-slate-700 rounded-xl border-0 focus:ring-2 focus:ring-blue-500"
+            disabled={isLoading}
+          />
+          <button onClick={handleSend} disabled={isLoading} className="bg-blue-600 text-white p-4 rounded-xl hover:bg-blue-700 transition disabled:opacity-50">
+            <Send className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnalyticsTab() {
+  return (
+    <div>
+      <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-6">Class Analytics</h1>
+      <div className="grid lg:grid-cols-3 gap-6 mb-6">
+        <AnalyticsCard label="Class Average" value="84%" change="+3%" />
+        <AnalyticsCard label="Completion Rate" value="92%" change="+5%" />
+        <AnalyticsCard label="Improvement" value="12%" change="+2%" />
+      </div>
+      <div className="grid lg:grid-cols-2 gap-6">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
+          <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Performance by Subject</h3>
+          <div className="space-y-4">
+            <ProgressBar label="Mathematics" value={87} />
+            <ProgressBar label="Science" value={79} />
+            <ProgressBar label="English" value={91} />
+            <ProgressBar label="History" value={83} />
+          </div>
+        </div>
+        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
+          <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Areas for Improvement</h3>
+          <div className="space-y-3">
+            <ImprovementItem area="Word Problems" students={12} />
+            <ImprovementItem area="Essay Writing" students={8} />
+            <ImprovementItem area="Lab Reports" students={6} />
+            <ImprovementItem area="Critical Analysis" students={5} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnalyticsCard({ label, value, change }: { label: string; value: string; change: string }) {
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
+      <p className="text-slate-600 dark:text-slate-400 mb-2">{label}</p>
+      <div className="flex items-end gap-3">
+        <span className="text-4xl font-bold text-slate-900 dark:text-white">{value}</span>
+        <span className="text-green-500 text-sm mb-1">{change}</span>
+      </div>
+    </div>
+  );
+}
+
+function ProgressBar({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <div className="flex justify-between mb-1">
+        <span className="text-slate-700 dark:text-slate-300">{label}</span>
+        <span className="text-slate-900 dark:text-white font-medium">{value}%</span>
+      </div>
+      <div className="h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+        <div className="h-full bg-blue-600 rounded-full" style={{ width: `${value}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function ImprovementItem({ area, students }: { area: string; students: number }) {
+  return (
+    <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700 rounded-xl">
+      <span className="text-slate-700 dark:text-slate-300">{area}</span>
+      <span className="text-sm bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 px-3 py-1 rounded-full">
+        {students} students
+      </span>
+    </div>
+  );
+}
+
+interface CalendarTabProps {
+  scheduledLessons: ScheduledLesson[];
+  setScheduledLessons: React.Dispatch<React.SetStateAction<ScheduledLesson[]>>;
+  onRemoveLesson: (id: string) => void;
+}
+
+function CalendarTab({ scheduledLessons, setScheduledLessons, onRemoveLesson }: CalendarTabProps) {
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [showAutoSchedule, setShowAutoSchedule] = useState(false);
+  const [autoScheduleForm, setAutoScheduleForm] = useState({ topic: "", subject: "Math", grade: "5th Grade", lessonsPerWeek: "3" });
+  const [isScheduling, setIsScheduling] = useState(false);
+
+  const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const timeSlots = ["8:00 AM", "9:00 AM", "10:00 AM", "11:00 AM", "12:00 PM", "1:00 PM", "2:00 PM", "3:00 PM"];
+
+  const getWeekDates = () => {
+    const startOfWeek = new Date(currentDate);
+    startOfWeek.setDate(currentDate.getDate() - currentDate.getDay());
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = new Date(startOfWeek);
+      date.setDate(startOfWeek.getDate() + i);
+      return date;
+    });
+  };
+
+  const weekDates = getWeekDates();
+
+  const formatDate = (date: Date) => date.toISOString().split("T")[0];
+
+  const getLessonsForSlot = (date: Date, time: string) => {
+    return scheduledLessons.filter(
+      (lesson) => lesson.date === formatDate(date) && lesson.time === time
+    );
+  };
+
+  const autoScheduleLessons = async () => {
+    setIsScheduling(true);
+    try {
+      const response = await fetch("/api/lesson", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: autoScheduleForm.topic,
+          grade: autoScheduleForm.grade,
+          subject: autoScheduleForm.subject,
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to generate lesson");
+
+      const lessonsPerWeek = parseInt(autoScheduleForm.lessonsPerWeek);
+      const availableDays = [1, 2, 3, 4, 5]; // Mon-Fri
+      const selectedDays = availableDays.slice(0, lessonsPerWeek);
+
+      const newLessons: ScheduledLesson[] = selectedDays.map((dayOffset, index) => {
+        const lessonDate = new Date(weekDates[0]);
+        lessonDate.setDate(weekDates[0].getDate() + dayOffset);
+        return {
+          id: `${Date.now()}-${index}`,
+          title: `${autoScheduleForm.topic} - Part ${index + 1}`,
+          subject: autoScheduleForm.subject,
+          date: formatDate(lessonDate),
+          time: timeSlots[index % timeSlots.length],
+          duration: "45 min",
+        };
+      });
+
+      setScheduledLessons((prev) => [...prev, ...newLessons]);
+      setShowAutoSchedule(false);
+      setAutoScheduleForm({ topic: "", subject: "Math", grade: "5th Grade", lessonsPerWeek: "3" });
+    } catch (error) {
+      console.error("Auto-schedule error:", error);
+    } finally {
+      setIsScheduling(false);
+    }
+  };
+
+  const prevWeek = () => {
+    const newDate = new Date(currentDate);
+    newDate.setDate(currentDate.getDate() - 7);
+    setCurrentDate(newDate);
+  };
+
+  const nextWeek = () => {
+    const newDate = new Date(currentDate);
+    newDate.setDate(currentDate.getDate() + 7);
+    setCurrentDate(newDate);
+  };
+
+  const monthYear = currentDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Lesson Calendar</h1>
+          <p className="text-slate-600 dark:text-slate-400 mt-1">Auto-schedule your lesson plans</p>
+        </div>
+        <button
+          onClick={() => setShowAutoSchedule(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition"
+        >
+          <Sparkles className="h-5 w-5" />
+          Auto-Schedule Lessons
+        </button>
+      </div>
+
+      {/* Auto-Schedule Modal */}
+      {showAutoSchedule && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-md shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Auto-Schedule Lessons</h2>
+              <button onClick={() => setShowAutoSchedule(false)} className="text-slate-500 hover:text-slate-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Topic/Unit</label>
+                <input
+                  type="text"
+                  value={autoScheduleForm.topic}
+                  onChange={(e) => setAutoScheduleForm({ ...autoScheduleForm, topic: e.target.value })}
+                  placeholder="e.g., Fractions, Civil War, Photosynthesis"
+                  className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Subject</label>
+                  <select
+                    value={autoScheduleForm.subject}
+                    onChange={(e) => setAutoScheduleForm({ ...autoScheduleForm, subject: e.target.value })}
+                    className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                  >
+                    <option>Math</option>
+                    <option>Science</option>
+                    <option>English</option>
+                    <option>History</option>
+                    <option>Art</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Grade</label>
+                  <select
+                    value={autoScheduleForm.grade}
+                    onChange={(e) => setAutoScheduleForm({ ...autoScheduleForm, grade: e.target.value })}
+                    className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                  >
+                    <option>3rd Grade</option>
+                    <option>4th Grade</option>
+                    <option>5th Grade</option>
+                    <option>6th Grade</option>
+                    <option>7th Grade</option>
+                    <option>8th Grade</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Lessons per Week</label>
+                <select
+                  value={autoScheduleForm.lessonsPerWeek}
+                  onChange={(e) => setAutoScheduleForm({ ...autoScheduleForm, lessonsPerWeek: e.target.value })}
+                  className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                >
+                  <option value="2">2 lessons</option>
+                  <option value="3">3 lessons</option>
+                  <option value="4">4 lessons</option>
+                  <option value="5">5 lessons</option>
+                </select>
+              </div>
+              <button
+                onClick={autoScheduleLessons}
+                disabled={!autoScheduleForm.topic || isScheduling}
+                className="w-full py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isScheduling ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Scheduling...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-5 w-5" />
+                    Generate & Schedule
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Calendar Header */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 shadow-sm border border-slate-200 dark:border-slate-700">
+        <div className="flex items-center justify-between mb-4">
+          <button onClick={prevWeek} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
+            <ChevronLeft className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+          </button>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{monthYear}</h2>
+          <button onClick={nextWeek} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
+            <ChevronRight className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+          </button>
+        </div>
+
+        {/* Week Grid */}
+        <div className="grid grid-cols-8 gap-1">
+          {/* Time column header */}
+          <div className="p-2 text-center text-sm font-medium text-slate-500 dark:text-slate-400">Time</div>
+          {/* Day headers */}
+          {weekDates.map((date, i) => (
+            <div key={i} className="p-2 text-center">
+              <div className="text-xs text-slate-500 dark:text-slate-400">{daysOfWeek[i]}</div>
+              <div className={`text-lg font-semibold ${formatDate(date) === formatDate(new Date()) ? "text-blue-600" : "text-slate-900 dark:text-white"}`}>
+                {date.getDate()}
+              </div>
+            </div>
+          ))}
+
+          {/* Time slots */}
+          {timeSlots.map((time, timeIndex) => (
+            <div key={`row-${time}`} className="contents">
+              <div className="p-2 text-xs text-slate-500 dark:text-slate-400 flex items-center">
+                <Clock className="h-3 w-3 mr-1" />
+                {time}
+              </div>
+              {weekDates.map((date, dayIndex) => {
+                const lessons = getLessonsForSlot(date, time);
+                return (
+                  <div
+                    key={`${dayIndex}-${time}`}
+                    className="min-h-[60px] p-1 border border-slate-100 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/50"
+                  >
+                    {lessons.map((lesson) => (
+                      <div
+                        key={lesson.id}
+                        className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg text-xs group relative"
+                      >
+                        <button
+                          onClick={() => onRemoveLesson(lesson.id)}
+                          className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                        <div className="font-medium text-blue-800 dark:text-blue-200 truncate">{lesson.title}</div>
+                        <div className="text-blue-600 dark:text-blue-400">{lesson.duration}</div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Scheduled Lessons List */}
+      {scheduledLessons.length > 0 && (
+        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-700">
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Scheduled Lessons</h3>
+          <div className="space-y-2">
+            {scheduledLessons.map((lesson) => (
+              <div key={lesson.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700 rounded-xl">
+                <div>
+                  <div className="font-medium text-slate-900 dark:text-white">{lesson.title}</div>
+                  <div className="text-sm text-slate-500 dark:text-slate-400">
+                    {lesson.subject} • {new Date(lesson.date).toLocaleDateString()} at {lesson.time}
+                  </div>
+                </div>
+                <button
+                  onClick={() => onRemoveLesson(lesson.id)}
+                  className="text-red-500 hover:text-red-700 p-1"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
