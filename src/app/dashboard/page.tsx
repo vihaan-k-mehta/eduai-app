@@ -271,7 +271,7 @@ export default function Dashboard() {
         {activeTab === "lessons" && <LessonsTab onAddToCalendar={addLessonToCalendar} onGoToCalendar={() => setActiveTab("calendar")} savedPlans={savedLessonPlans} onSavePlan={addLessonPlanToHistory} onRemovePlan={removeLessonPlan} />}
         {activeTab === "calendar" && <CalendarTab scheduledLessons={scheduledLessons} setScheduledLessons={setScheduledLessons} onRemoveLesson={removeLessonFromCalendar} assignments={assignments} savedPlans={savedLessonPlans} classes={classes} />}
         {activeTab === "chat" && <ChatTab onCreateAssignment={addAssignment} onCreateLessonPlan={addLessonPlanToHistory} onAddPendingGrade={addPendingGrade} classes={classes} />}
-        {activeTab === "analytics" && <AnalyticsTab classes={classes} gradedAssignments={gradedAssignments} assignments={assignments} pendingGrades={pendingGrades} />}
+        {activeTab === "analytics" && <AnalyticsTab />}
         {activeTab === "canvas" && <CanvasTab />}
       </main>
     </div>
@@ -2114,138 +2114,176 @@ function ChatTab({ onCreateAssignment, onCreateLessonPlan, onAddPendingGrade, cl
   );
 }
 
-interface AnalyticsTabProps {
-  classes: ClassSection[];
-  gradedAssignments: GradedAssignment[];
-  assignments: Assignment[];
-  pendingGrades: PendingGrade[];
+interface CanvasAnalytics {
+  courses: {
+    id: number;
+    name: string;
+    studentCount: number;
+    assignmentCount: number;
+    avgScore: number;
+    submissions: { graded: number; pending: number; missing: number };
+    recentGrades: { studentName: string; assignmentName: string; score: number; maxScore: number; gradedAt: string }[];
+  }[];
+  totalStudents: number;
+  totalAssignments: number;
+  overallAverage: number;
+  totalGraded: number;
+  totalPending: number;
 }
 
-function AnalyticsTab({ classes, gradedAssignments, assignments, pendingGrades }: AnalyticsTabProps) {
-  // Calculate real statistics
-  const totalStudents = classes.reduce((sum, c) => sum + c.studentCount, 0);
-  const avgGrade = gradedAssignments.length > 0
-    ? Math.round(gradedAssignments.reduce((sum, g) => sum + (g.grade / g.maxPoints) * 100, 0) / gradedAssignments.length)
-    : 0;
-  const completionRate = assignments.length > 0
-    ? Math.round((gradedAssignments.length / (assignments.length * totalStudents || 1)) * 100)
-    : 0;
+function AnalyticsTab() {
+  const [canvasData, setCanvasData] = useState<CanvasAnalytics | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Group grades by class
-  const gradesByClass = classes.map(c => {
-    const classGrades = gradedAssignments.filter(g => g.classSection === c.name);
-    const avg = classGrades.length > 0
-      ? Math.round(classGrades.reduce((sum, g) => sum + (g.grade / g.maxPoints) * 100, 0) / classGrades.length)
-      : 0;
-    return { name: c.name, subject: c.subject, avg, count: classGrades.length };
-  });
+  const fetchCanvasAnalytics = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/canvas?action=analytics");
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+      } else {
+        setCanvasData(data.analytics);
+      }
+    } catch {
+      setError("Failed to fetch Canvas analytics");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  // Group by subject
-  const subjects = [...new Set(classes.map(c => c.subject))];
-  const gradesBySubject = subjects.map(subject => {
-    const subjectGrades = gradedAssignments.filter(g => {
-      const cls = classes.find(c => c.name === g.classSection);
-      return cls?.subject === subject;
-    });
-    const avg = subjectGrades.length > 0
-      ? Math.round(subjectGrades.reduce((sum, g) => sum + (g.grade / g.maxPoints) * 100, 0) / subjectGrades.length)
-      : 0;
-    return { subject, avg };
-  });
+  useEffect(() => {
+    fetchCanvasAnalytics();
+  }, []);
+
+  // Get all recent grades across courses
+  const allRecentGrades = canvasData?.courses
+    .flatMap(c => c.recentGrades.map(g => ({ ...g, courseName: c.name })))
+    .sort((a, b) => new Date(b.gradedAt).getTime() - new Date(a.gradedAt).getTime())
+    .slice(0, 15) || [];
 
   return (
     <div>
-      <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-6">Class Analytics</h1>
-
-      {/* Summary Cards */}
-      <div className="grid lg:grid-cols-4 gap-6 mb-6">
-        <AnalyticsCard label="Total Students" value={totalStudents.toString()} change={`${classes.length} classes`} />
-        <AnalyticsCard label="Class Average" value={`${avgGrade}%`} change={gradedAssignments.length > 0 ? "Based on grades" : "No grades yet"} />
-        <AnalyticsCard label="Assignments" value={assignments.length.toString()} change={`${pendingGrades.length} pending`} />
-        <AnalyticsCard label="Graded" value={gradedAssignments.length.toString()} change="Total submissions" />
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Canvas Analytics</h1>
+        <button
+          onClick={fetchCanvasAnalytics}
+          disabled={loading}
+          className="flex items-center gap-2 bg-orange-600 text-white px-4 py-2 rounded-xl hover:bg-orange-700 transition disabled:opacity-50"
+        >
+          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          {loading ? "Loading..." : "Refresh from Canvas"}
+        </button>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6 mb-6">
-        {/* Performance by Class */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
-          <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Performance by Class</h3>
-          {gradesByClass.length > 0 ? (
-            <div className="space-y-4">
-              {gradesByClass.map(c => (
-                <div key={c.name}>
-                  <div className="flex justify-between mb-1">
-                    <span className="text-slate-700 dark:text-slate-300">{c.name} - {c.subject}</span>
-                    <span className="text-slate-900 dark:text-white font-medium">{c.avg}% ({c.count} graded)</span>
-                  </div>
-                  <div className="h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${c.avg >= 80 ? "bg-green-500" : c.avg >= 60 ? "bg-yellow-500" : "bg-red-500"}`}
-                      style={{ width: `${c.avg}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-slate-500 dark:text-slate-400">No grades recorded yet. Start grading to see analytics!</p>
-          )}
+      {error && (
+        <div className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 p-4 rounded-xl mb-6">
+          {error}
         </div>
+      )}
 
-        {/* Performance by Subject */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
-          <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Performance by Subject</h3>
-          {gradesBySubject.length > 0 ? (
-            <div className="space-y-4">
-              {gradesBySubject.map(s => (
-                <ProgressBar key={s.subject} label={s.subject} value={s.avg} />
-              ))}
-            </div>
-          ) : (
-            <p className="text-slate-500 dark:text-slate-400">No subject data available yet.</p>
-          )}
-        </div>
-      </div>
-
-      {/* Recent Grades */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
-        <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Recent Grades</h3>
-        {gradedAssignments.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
-                  <th className="pb-3 font-medium">Student</th>
-                  <th className="pb-3 font-medium">Assignment</th>
-                  <th className="pb-3 font-medium">Class</th>
-                  <th className="pb-3 font-medium">Grade</th>
-                  <th className="pb-3 font-medium">Date</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                {gradedAssignments.slice(0, 10).map(g => (
-                  <tr key={g.id} className="text-slate-700 dark:text-slate-300">
-                    <td className="py-3">{g.studentName}</td>
-                    <td className="py-3">{g.assignmentTitle}</td>
-                    <td className="py-3">{g.classSection}</td>
-                    <td className="py-3">
-                      <span className={`px-2 py-1 rounded-full text-sm ${
-                        (g.grade / g.maxPoints) >= 0.8 ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300" :
-                        (g.grade / g.maxPoints) >= 0.6 ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300" :
-                        "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
-                      }`}>
-                        {g.grade}/{g.maxPoints}
-                      </span>
-                    </td>
-                    <td className="py-3 text-sm">{new Date(g.gradedAt).toLocaleDateString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {loading && !canvasData ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <RefreshCw className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
+            <p className="text-slate-600 dark:text-slate-400">Fetching data from Canvas...</p>
           </div>
-        ) : (
-          <p className="text-slate-500 dark:text-slate-400">No grades recorded yet. Approve pending grades to see them here!</p>
-        )}
-      </div>
+        </div>
+      ) : canvasData ? (
+        <>
+          {/* Summary Cards */}
+          <div className="grid lg:grid-cols-4 gap-6 mb-6">
+            <AnalyticsCard label="Total Students" value={canvasData.totalStudents.toString()} change={`${canvasData.courses.length} courses`} />
+            <AnalyticsCard label="Overall Average" value={`${canvasData.overallAverage}%`} change="Across all courses" />
+            <AnalyticsCard label="Assignments" value={canvasData.totalAssignments.toString()} change="Total in Canvas" />
+            <AnalyticsCard label="Graded" value={canvasData.totalGraded.toString()} change={`${canvasData.totalPending} pending`} />
+          </div>
+
+          {/* Course Performance */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 mb-6">
+            <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Performance by Course</h3>
+            {canvasData.courses.length > 0 ? (
+              <div className="space-y-4">
+                {canvasData.courses.map(course => (
+                  <div key={course.id}>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-slate-700 dark:text-slate-300">{course.name}</span>
+                      <span className="text-slate-900 dark:text-white font-medium">
+                        {course.avgScore}% ({course.studentCount} students)
+                      </span>
+                    </div>
+                    <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          course.avgScore >= 80 ? "bg-green-500" :
+                          course.avgScore >= 60 ? "bg-yellow-500" :
+                          course.avgScore > 0 ? "bg-red-500" : "bg-slate-400"
+                        }`}
+                        style={{ width: `${course.avgScore}%` }}
+                      />
+                    </div>
+                    <div className="flex gap-4 mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      <span>{course.assignmentCount} assignments</span>
+                      <span>{course.submissions.graded} graded</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-slate-500 dark:text-slate-400">No course data available.</p>
+            )}
+          </div>
+
+          {/* Recent Grades from Canvas */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl p-6">
+            <h3 className="font-semibold text-lg text-slate-900 dark:text-white mb-4">Recent Grades from Canvas</h3>
+            {allRecentGrades.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="text-left text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                      <th className="pb-3 font-medium">Student</th>
+                      <th className="pb-3 font-medium">Assignment</th>
+                      <th className="pb-3 font-medium">Course</th>
+                      <th className="pb-3 font-medium">Score</th>
+                      <th className="pb-3 font-medium">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                    {allRecentGrades.map((g, i) => (
+                      <tr key={i} className="text-slate-700 dark:text-slate-300">
+                        <td className="py-3">{g.studentName}</td>
+                        <td className="py-3 max-w-[200px] truncate">{g.assignmentName}</td>
+                        <td className="py-3 max-w-[150px] truncate">{g.courseName}</td>
+                        <td className="py-3">
+                          <span className={`px-2 py-1 rounded-full text-sm ${
+                            (g.score / g.maxScore) >= 0.8 ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300" :
+                            (g.score / g.maxScore) >= 0.6 ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300" :
+                            "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
+                          }`}>
+                            {g.score}/{g.maxScore}
+                          </span>
+                        </td>
+                        <td className="py-3 text-sm">{new Date(g.gradedAt).toLocaleDateString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-slate-500 dark:text-slate-400">No recent grades found in Canvas.</p>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="bg-white dark:bg-slate-800 rounded-2xl p-12 text-center">
+          <BarChart3 className="h-16 w-16 text-slate-400 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">No Analytics Data</h3>
+          <p className="text-slate-600 dark:text-slate-400 mb-4">Click "Refresh from Canvas" to load your course analytics.</p>
+        </div>
+      )}
     </div>
   );
 }
